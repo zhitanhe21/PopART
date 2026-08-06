@@ -1,7 +1,7 @@
 ###############################################################################
 ###############################################################################
 
-# PopART published-reference Monte Carlo workflow
+# PopART manuscript-reference Monte Carlo workflow
 
 ###############################################################################
 ###############################################################################
@@ -100,7 +100,7 @@ refresh_resumed_metadata <- function(data, run_id, sample_design, run_index,
 }
 
 
-#' Run the PopART published-reference Monte Carlo study.
+#' Run the PopART manuscript-reference Monte Carlo study.
 #'
 #' This repository-only entry point uses a bounded cross-replicate HAL queue,
 #' worker slots, content-addressed fit caching, successful-run resume
@@ -113,7 +113,7 @@ refresh_resumed_metadata <- function(data, run_id, sample_design, run_index,
 #' @param run_id Character identifier used in output file names.
 #' @param base_seed Integer base seed. Monte Carlo replicate `r` uses
 #'   `base_seed + r` across all requested sample-size combinations, matching the
-#'   published reference-study grid organization.
+#'   manuscript reference-study grid organization.
 #' @param mc_reps Positive integer number of Monte Carlo replicates for every
 #'   requested sample-size combination.
 #' @param out_dir Character directory for result and timing files.
@@ -125,9 +125,9 @@ refresh_resumed_metadata <- function(data, run_id, sample_design, run_index,
 #' @param backend Character fit-level backend: `auto`, `fork`, or `psock`.
 #' @param m Integer number of clusters.
 #' @param p_resp Numeric response probability setting, fixed at `0.5` by the
-#'   published reference design.
+#'   manuscript reference design.
 #' @param p_cens Numeric censoring probability setting, fixed at `0.3` by the
-#'   published reference design.
+#'   manuscript reference design.
 #' @param max_runs Optional integer limiting how many sample-size combinations
 #'   are selected before Monte Carlo expansion.
 #' @param total_cores,reserve_cores,fit_workers,cv_workers_per_fit,cv_folds,cv_nlambda
@@ -199,14 +199,14 @@ run_monte_carlo_study <- function(
   if (length(p_resp) != 1L || !is.finite(p_resp) ||
       abs(p_resp - 0.5) > 1e-12) {
     stop(
-      "The published reference design requires p_resp = 0.5.",
+      "The manuscript reference design requires p_resp = 0.5.",
       call. = FALSE
     )
   }
   if (length(p_cens) != 1L || !is.finite(p_cens) ||
       abs(p_cens - 0.3) > 1e-12) {
     stop(
-      "The published reference design requires p_cens = 0.3.",
+      "The manuscript reference design requires p_cens = 0.3.",
       call. = FALSE
     )
   }
@@ -356,7 +356,7 @@ run_monte_carlo_study <- function(
   plan_output$seed_design <- "shared_by_mc_rep_across_sample_sizes"
   atomic_write_csv(plan_output, plan_file, overwrite = TRUE)
 
-  cat("Running the PopART published-reference Monte Carlo study\n")
+  cat("Running the PopART manuscript-reference Monte Carlo study\n")
   cat("  run_id = ", run_id, "\n", sep = "")
   cat("  base_seed = ", base_seed, "\n", sep = "")
   cat("  mc_reps = ", mc_reps, "\n", sep = "")
@@ -1253,7 +1253,7 @@ run_monte_carlo_study <- function(
   )
   atomic_write_csv(run_summary, summary_file, overwrite = TRUE)
 
-  cat("Finished the PopART published-reference Monte Carlo study\n")
+  cat("Finished the PopART manuscript-reference Monte Carlo study\n")
   cat("Wrote parallel plan to: ", plan_file, "\n", sep = "")
   cat("Wrote timing results to: ", timing_file, "\n", sep = "")
   if (nrow(scheduler_trace) > 0L) {

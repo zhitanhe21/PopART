@@ -398,7 +398,7 @@ sample_size_grid <- function(n_trial, n_auxiliary) {
 #' Expand explicit sample-size settings into a Monte Carlo grid.
 #'
 #' Each Monte Carlo replicate uses one seed across all requested sample-size
-#' combinations, matching the published reference-study seed organization.
+#' combinations, matching the manuscript reference-study seed organization.
 #'
 #' @param sizes Data frame with `n_trial` and `n_aux` columns.
 #' @param mc_reps Positive integer number of Monte Carlo replicates per

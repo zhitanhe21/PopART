@@ -2,7 +2,7 @@
 % Please edit documentation in R/fit_popart.R
 \name{fit_popart}
 \alias{fit_popart}
-\title{Fit PopART estimators to trial and auxiliary data}
+\title{Fit population-augmented randomized-trial estimators}
 \usage{
 fit_popart(
   trial_data,
@@ -18,53 +18,137 @@ fit_popart(
 )
 }
 \arguments{
-\item{trial_data}{A data frame containing the randomized-trial records.}
+\item{trial_data}{A \code{data.frame} or tibble with one row per randomized-trial
+participant. It must contain the four trial variables named below and every
+column in \code{covariates}.}
 
-\item{auxiliary_data}{A data frame representing the target population. It
-needs the requested covariates and, optionally, an auxiliary weight column;
-trial-only outcome and missingness columns are not required.}
+\item{auxiliary_data}{A \code{data.frame} or tibble with one row per auxiliary
+target-population record. It must contain every column in \code{covariates} and,
+when requested, the column named by \code{auxiliary_weight}.}
 
-\item{outcome, treatment, response, censoring}{Single character strings naming
-columns in \code{trial_data}. All four variables must be binary. A value of one
-for \code{response} means the participant responded; a value of one for
-\code{censoring} means their outcome is censored.}
+\item{outcome}{A nonempty character string naming a binary 0/1 or
+\code{FALSE}/\code{TRUE} outcome column in \code{trial_data}.}
 
-\item{covariates}{Character vector naming numeric or logical baseline
-covariates present in both data sets. Categorical variables should be
-encoded before calling this function.}
+\item{treatment}{A nonempty character string naming the treatment column in
+\code{trial_data}. Its two allowed values are supplied in control-then-treated
+order through \code{treatment_values}.}
 
-\item{auxiliary_weight}{Optional column in \code{auxiliary_data} containing
-nonnegative target-population weights. Unit weights are used when \code{NULL}.}
+\item{response}{A nonempty character string naming a binary 0/1 or
+\code{FALSE}/\code{TRUE} response-indicator column in \code{trial_data}; one means that the
+participant responded.}
 
-\item{treatment_values}{Two distinct values in control, treated order. The
-default supports a treatment column coded 0/1. For example, use
-\code{c("usual care", "intervention")} for labeled arms.}
+\item{censoring}{A nonempty character string naming a binary 0/1 or
+\code{FALSE}/\code{TRUE} censoring-indicator column in \code{trial_data}; one means that a
+responding participant's outcome is censored.}
 
-\item{control}{A control object created by \code{\link[=popart_control]{popart_control()}}.}
+\item{covariates}{A nonempty character vector of distinct baseline-covariate
+column names present in both data sets. Covariates must be numeric or
+logical and cannot contain missing or non-finite values. Encode categorical
+variables before fitting.}
+
+\item{auxiliary_weight}{\code{NULL} or a nonempty character string naming a column
+of finite, nonnegative target-population weights in \code{auxiliary_data}. The
+weights must have a positive sum. Unit weights are used when \code{NULL}.}
+
+\item{treatment_values}{A length-two vector containing the treatment values
+in control-then-treated order. The default, \code{c(0, 1)}, supports numeric 0/1
+coding; labeled arms may instead use, for example,
+\code{c("usual care", "intervention")}.}
+
+\item{control}{A \code{popart_control} object created by \code{\link[=popart_control]{popart_control()}}.}
 }
 \value{
-An object of class \code{popart_fit} containing estimates, variances,
-confidence intervals, nuisance-fit timing, and diagnostic information.
+An object of class \code{popart_fit}, implemented as a list with the
+following elements:
+\itemize{
+\item \code{estimates}: a data frame with columns \code{estimator}, \code{parameter},
+\code{estimate}, \code{std_error}, \code{conf_low}, and \code{conf_high}.
+\item \code{variance}: a data frame with columns \code{estimator}, \code{parameter}, and
+\code{variance} for each arm mean, risk difference, and risk ratio.
+\item \code{covariance}: a named list of two-by-two covariance matrices for the
+control and treated arm means, one matrix per estimator.
+\item \code{full_covariance}: a named list of four-by-four covariance matrices
+for the arm means, risk difference, and risk ratio, one per estimator.
+\item \code{fit_diagnostics}: a data frame with columns \code{fit}, \code{observations},
+\code{predictors}, \code{response_mean}, \code{weight_sum}, \code{elapsed_seconds},
+\code{basis_seconds}, \code{design_matrix_seconds}, \code{lasso_seconds},
+\code{selected_lambda}, \code{n_cv_folds}, \code{n_lambda_values}, \code{n_cv_workers},
+\code{process_id}, \code{started_at}, and \code{finished_at}.
+\item \code{diagnostics}: a list containing \code{sample_sizes}, the auxiliary-weight
+normalization scale (\code{auxiliary_weight_scale}), nuisance-prediction ranges
+(\code{prediction_ranges}), and diagnostic \code{messages}.
+\item \code{nuisance_fits}: a list named \code{selection_control},
+\code{selection_treated}, \code{outcome}, and \code{censoring} containing fitted HAL
+objects when \code{control$keep_nuisance_fits} is \code{TRUE}; otherwise \code{NULL}.
+\item \code{columns}: a list with elements \code{outcome}, \code{treatment}, \code{response},
+\code{censoring}, \code{covariates}, \code{auxiliary_weight}, and \code{treatment_values},
+recording the input-column specification used for the analysis.
+\item \code{control}: the validated \code{popart_control} object used for fitting.
+\item \code{call}: the matched function call.
+}
 }
 \description{
-Fits trial-only and trial-and-auxiliary AIPW estimators using four HAL nuisance
-models: a shared outcome regression, one censoring regression, and separate
-trial-selection models for the control and treated arms. This function
-analyzes supplied data; it does not generate data or run Monte Carlo
-simulations.
+Fits augmented inverse probability weighting (AIPW) estimators to a
+randomized-trial sample and an auxiliary sample from the target population.
+Both a trial-only estimator and a trial-and-auxiliary estimator are returned.
+}
+\details{
+Four highly adaptive lasso (HAL) nuisance models are fitted: one outcome
+regression, one censoring regression, and arm-specific trial-selection
+regressions. The outcome regression is shared by the two estimators. The
+function analyzes data supplied by the user; it does not generate data or
+run Monte Carlo simulations.
+
+The trial-and-auxiliary AIPW framework follows Richardson, Shook-Sa, and
+Hudgens (n.d.). The current use of HAL for nuisance fitting is an
+implementation choice of this package and is cited separately below.
+
+\code{trial_data} and \code{auxiliary_data} must contain the same baseline covariates,
+but the auxiliary sample does not need treatment, response, censoring, or
+outcome columns. The outcome may be missing only when it is unobserved
+(\code{response = 0} or \code{censoring = 1}). Censoring may be missing when
+\code{response = 0}; such entries are treated as zero internally. Input rows are
+not modified.
+
+The returned Wald intervals use the influence-function covariance estimates
+and the confidence level in \code{control}. They are not truncated to the natural
+parameter space. Likewise, estimated nuisance probabilities are diagnosed
+but are not truncated.
 }
 \examples{
-\dontrun{
+trial_file <- system.file("extdata", "example_trial.csv", package = "popart")
+auxiliary_file <- system.file(
+  "extdata", "example_auxiliary.csv", package = "popart"
+)
+trial <- utils::read.csv(trial_file)
+auxiliary <- utils::read.csv(auxiliary_file)
+
+# Reduced HAL settings keep the help-page example quick.
+example_control <- popart_control(
+  n_lambda_values = 5L,
+  max_degree = 1L,
+  num_knots = 1L
+)
 fit <- fit_popart(
   trial_data = trial,
   auxiliary_data = auxiliary,
   outcome = "outcome",
-  treatment = "arm",
+  treatment = "treatment",
   response = "responded",
   censoring = "censored",
-  covariates = c("age", "baseline_score"),
-  auxiliary_weight = "survey_weight"
+  covariates = c("baseline_risk", "baseline_binary"),
+  auxiliary_weight = "survey_weight",
+  control = example_control
 )
-summary(fit)
+fit$estimates
+
 }
+\references{
+Richardson, B. D., Shook-Sa, B. E., and Hudgens, M. G. (n.d.).
+"Causal Inference from Cluster-Randomized Trials with Differential
+Nonresponse." Unpublished manuscript submitted to \emph{Biometrics}.
+
+Hejazi, N. S., Coyle, J. R., and van der Laan, M. J. (2020).
+"hal9001: Scalable highly adaptive lasso regression in R."
+\emph{Journal of Open Source Software}. \doi{10.21105/joss.02526}.
 }

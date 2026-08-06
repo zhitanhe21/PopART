@@ -3,6 +3,92 @@
 ###############################################################################
 
 
+#' Methods for fitted PopART analyses
+#'
+#' Standard S3 methods extract, summarize, print, and reformat objects returned
+#' by [fit_popart()]. The print method shows the trial-and-auxiliary estimates;
+#' [summary()] and [as.data.frame()] retain results for both the trial-only and
+#' trial-and-auxiliary estimators.
+#'
+#' `coef()` returns point estimates, `vcov()` returns their joint covariance
+#' matrix, and `confint()` computes normal-approximation Wald intervals. The
+#' covariance matrix is ordered as `mean_control`, `mean_treated`,
+#' `risk_difference`, and `risk_ratio`. `nobs()` counts both trial and auxiliary
+#' records because both samples contribute to the population-augmented analysis.
+#'
+#' @param x A `popart_fit` object for `print()` and `as.data.frame()`, or a
+#'   `summary.popart_fit` object for the summary print method.
+#' @param object A `popart_fit` object returned by [fit_popart()].
+#' @param digits A single integer controlling the number of significant digits
+#'   printed. The default is derived from `getOption("digits")`.
+#' @param estimator A character string selecting an estimator. `coef()` accepts
+#'   `"trial_auxiliary"`, `"trial_only"`, or `"all"`; `vcov()` and `confint()`
+#'   accept `"trial_auxiliary"` or `"trial_only"`.
+#' @param parm `NULL` or a character vector selecting any of `"mean_control"`,
+#'   `"mean_treated"`, `"risk_difference"`, and `"risk_ratio"`. `NULL` selects
+#'   all four parameters.
+#' @param level A single numeric confidence level strictly between zero and one.
+#'   By default, the level used to fit `object` is used.
+#' @param row.names `NULL` or a value supplied for compatibility with
+#'   `as.data.frame()`; currently ignored.
+#' @param optional A logical value supplied for compatibility with
+#'   `as.data.frame()`; currently ignored.
+#' @param ... Additional arguments, currently ignored.
+#'
+#' @return The methods return the following objects:
+#'   \itemize{
+#'   \item `print.popart_fit()` and `print.summary.popart_fit()` return their
+#'     input object invisibly after displaying it.
+#'   \item `summary.popart_fit()` returns a `summary.popart_fit` list containing
+#'     `call`, `estimates`, `sample_sizes`, `fit_diagnostics`, diagnostic
+#'     `messages`, and `conf_level`.
+#'   \item `coef.popart_fit()` returns a named numeric vector of estimates.
+#'   \item `vcov.popart_fit()` returns a four-by-four numeric covariance matrix.
+#'   \item `confint.popart_fit()` returns a numeric matrix with one row per
+#'     selected parameter and two columns containing the lower and upper Wald
+#'     confidence limits.
+#'   \item `nobs.popart_fit()` returns the total number of trial and auxiliary
+#'     records as an unnamed scalar.
+#'   \item `as.data.frame.popart_fit()` returns the `estimates` data frame with
+#'     estimator, parameter, estimate, standard-error, and interval columns.
+#'   }
+#'
+#' @examples
+#' trial <- utils::read.csv(system.file(
+#'   "extdata", "example_trial.csv", package = "popart"
+#' ))
+#' auxiliary <- utils::read.csv(system.file(
+#'   "extdata", "example_auxiliary.csv", package = "popart"
+#' ))
+#' fit <- fit_popart(
+#'   trial_data = trial,
+#'   auxiliary_data = auxiliary,
+#'   outcome = "outcome",
+#'   treatment = "treatment",
+#'   response = "responded",
+#'   censoring = "censored",
+#'   covariates = c("baseline_risk", "baseline_binary"),
+#'   auxiliary_weight = "survey_weight",
+#'   control = popart_control(
+#'     n_lambda_values = 5L,
+#'     max_degree = 1L,
+#'     num_knots = 1L
+#'   )
+#' )
+#'
+#' print(fit)
+#' summary(fit)
+#' coef(fit, estimator = "trial_auxiliary")
+#' vcov(fit, estimator = "trial_auxiliary")
+#' confint(fit, parm = c("risk_difference", "risk_ratio"))
+#' nobs(fit)
+#' head(as.data.frame(fit))
+#'
+#' @name popart_fit_methods
+NULL
+
+
+#' @rdname popart_fit_methods
 #' @export
 print.popart_fit <- function(x, digits = max(3L, getOption("digits") - 3L), ...) {
   cat("PopART fit\n")
@@ -25,12 +111,7 @@ print.popart_fit <- function(x, digits = max(3L, getOption("digits") - 3L), ...)
 }
 
 
-#' Summarize a PopART fit
-#'
-#' @param object A fitted `popart_fit` object.
-#' @param ... Additional arguments, currently ignored.
-#'
-#' @return An object of class `summary.popart_fit`.
+#' @rdname popart_fit_methods
 #' @export
 summary.popart_fit <- function(object, ...) {
   structure(
@@ -47,6 +128,7 @@ summary.popart_fit <- function(object, ...) {
 }
 
 
+#' @rdname popart_fit_methods
 #' @export
 print.summary.popart_fit <- function(
     x,
@@ -69,14 +151,7 @@ print.summary.popart_fit <- function(
 }
 
 
-#' Extract PopART coefficient estimates
-#'
-#' @param object A fitted `popart_fit` object.
-#' @param estimator Which estimator to return: `"trial_auxiliary"`,
-#'   `"trial_only"`, or `"all"`.
-#' @param ... Additional arguments, currently ignored.
-#'
-#' @return A named numeric vector.
+#' @rdname popart_fit_methods
 #' @export
 coef.popart_fit <- function(
     object,
@@ -96,14 +171,7 @@ coef.popart_fit <- function(
 }
 
 
-#' Extract a PopART covariance matrix
-#'
-#' @param object A fitted `popart_fit` object.
-#' @param estimator Which estimator covariance matrix to return.
-#' @param ... Additional arguments, currently ignored.
-#'
-#' @return A covariance matrix for the two arm means, risk difference, and risk
-#'   ratio.
+#' @rdname popart_fit_methods
 #' @export
 vcov.popart_fit <- function(
     object,
@@ -114,15 +182,7 @@ vcov.popart_fit <- function(
 }
 
 
-#' Compute confidence intervals for a PopART fit
-#'
-#' @param object A fitted `popart_fit` object.
-#' @param parm Optional character vector selecting parameters.
-#' @param level Confidence level.
-#' @param estimator Which estimator to use.
-#' @param ... Additional arguments, currently ignored.
-#'
-#' @return A two-column matrix of Wald confidence limits.
+#' @rdname popart_fit_methods
 #' @export
 confint.popart_fit <- function(
     object,
@@ -164,6 +224,7 @@ confint.popart_fit <- function(
 }
 
 
+#' @rdname popart_fit_methods
 #' @export
 nobs.popart_fit <- function(object, ...) {
   unname(
@@ -173,6 +234,7 @@ nobs.popart_fit <- function(object, ...) {
 }
 
 
+#' @rdname popart_fit_methods
 #' @export
 as.data.frame.popart_fit <- function(x, row.names = NULL, optional = FALSE, ...) {
   x$estimates

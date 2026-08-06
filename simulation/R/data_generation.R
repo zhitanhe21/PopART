@@ -1,9 +1,9 @@
 ###############################################################################
-# Published-reference data generation
+# Manuscript-reference data generation
 ###############################################################################
 
 
-#' Generate clustered data from the published reference design.
+#' Generate clustered data from the manuscript reference design.
 #'
 #' Generates one trial sample and one auxiliary sample using the same
 #' data-generating mechanism used to validate the PopART estimator. Trial and
@@ -50,14 +50,14 @@ generate_reference_data <- function(m, n_trial, n_auxiliary, p_resp, p_cens,
   if (length(p_resp) != 1L || !is.finite(p_resp) ||
       abs(p_resp - 0.5) > 1e-12) {
     stop(
-      "The published reference design requires p_resp = 0.5.",
+      "The manuscript reference design requires p_resp = 0.5.",
       call. = FALSE
     )
   }
   if (length(p_cens) != 1L || !is.finite(p_cens) ||
       abs(p_cens - 0.3) > 1e-12) {
     stop(
-      "The published reference design requires p_cens = 0.3.",
+      "The manuscript reference design requires p_cens = 0.3.",
       call. = FALSE
     )
   }

@@ -36,7 +36,7 @@ make_reference_fit_jobs <- function(dat, seed, n_trial, n_aux, config,
     smoothness_orders <- 1
     max_degree <- 2
     # Experimental laptop default. This deliberately uses a coarser HAL
-    # dictionary than the published reference setting and is tracked in cache and
+    # dictionary than the manuscript reference setting and is tracked in cache and
     # checkpoint identities.
     num_knots <- REFERENCE_DEFAULT_NUM_KNOTS
     fold_seed <- seed + stable_label_seed(label)

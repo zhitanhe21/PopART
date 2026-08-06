@@ -1,7 +1,7 @@
 ###############################################################################
 ###############################################################################
 
-# Reporting helpers for the PopART published-reference study
+# Reporting helpers for the PopART manuscript-reference study
 
 ###############################################################################
 ###############################################################################
@@ -85,7 +85,7 @@ write_monte_carlo_report <- function(
   }
 
   report <- c(
-    "# PopART Published-Reference Monte Carlo Report",
+    "# PopART Manuscript-Reference Monte Carlo Report",
     "",
     paste0("- Run ID: `", run_id, "`"),
     paste0("- Generated: `", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "`"),

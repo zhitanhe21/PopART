@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 
-# Run the repository-only PopART published-reference Monte Carlo study.
+# Run the repository-only PopART manuscript-reference Monte Carlo study.
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 

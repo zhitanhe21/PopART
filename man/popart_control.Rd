@@ -22,44 +22,101 @@ popart_control(
 )
 }
 \arguments{
-\item{n_cv_folds}{Number of cross-validation folds used by each HAL fit.}
+\item{n_cv_folds}{A single integer greater than or equal to 3 giving the
+number of cross-validation folds for each HAL fit. Default: \code{3L}.}
 
-\item{n_lambda_values}{Number of lasso penalty values evaluated within each fit.}
+\item{n_lambda_values}{A single positive integer giving the number of lasso
+penalty values evaluated within each HAL fit. Default: \code{50L}.}
 
-\item{n_cv_workers}{Number of workers used across cross-validation folds when
-complete nuisance fits are run serially.}
+\item{n_cv_workers}{A single positive integer, no greater than \code{n_cv_folds},
+giving the number of R workers used across cross-validation folds. It must
+equal one when \code{n_fit_workers > 1}. Default: \code{1L}.}
 
-\item{n_fit_workers}{Number of complete nuisance fits run concurrently. Values
-greater than one require \code{n_cv_workers = 1} to avoid nested parallelism.}
+\item{n_fit_workers}{A single integer from 1 through 4 giving the maximum
+number of complete nuisance fits run concurrently. It must equal one when
+\code{n_cv_workers > 1}. Default: \code{1L}.}
 
-\item{parallel_backend}{Complete-fit parallel backend: \code{"auto"}, \code{"fork"}, or
-\code{"psock"}.}
+\item{parallel_backend}{A character string selecting the complete-fit
+parallel backend: \code{"auto"}, \code{"fork"}, or \code{"psock"}. The fork backend is
+unavailable on Windows. Default: \code{"auto"}.}
 
-\item{random_seed}{Nonnegative integer used to construct reproducible CV folds.}
+\item{random_seed}{A single nonnegative integer used to construct reproducible
+cross-validation fold assignments. Default: \code{1L}.}
 
-\item{smoothness_orders, max_degree, num_knots}{HAL basis settings.}
+\item{smoothness_orders}{A nonempty vector of nonnegative integers specifying
+HAL basis smoothness orders. Default: \code{1L}.}
 
-\item{treatment_probability}{Known probability of assignment to the treated
-arm. The default corresponds to equal randomization.}
+\item{max_degree}{A single positive integer giving the maximum HAL interaction
+degree. Default: \code{2L}.}
 
-\item{conf_level}{Confidence level for Wald intervals.}
+\item{num_knots}{A nonempty vector of positive integers specifying the HAL
+knot counts. Default: \code{c(5L, 3L)}.}
 
-\item{normalize_auxiliary_weights}{Whether auxiliary weights should be
-rescaled to have mean one. This is the scale used by the reference
-estimator and makes their scale relative to unit-weighted trial records
-explicit.}
+\item{treatment_probability}{A single numeric value strictly between zero and
+one giving the known probability of assignment to the treated arm. Default:
+\code{0.5}, corresponding to equal randomization.}
 
-\item{keep_nuisance_fits}{Whether fitted HAL objects are retained in the
-returned object.}
+\item{conf_level}{A single numeric value strictly between zero and one giving
+the confidence level for Wald intervals. Default: \code{0.95}.}
 
-\item{positivity_threshold}{Threshold used only to flag small estimated
-probabilities in diagnostics. Predictions are not truncated.}
+\item{normalize_auxiliary_weights}{A single logical value indicating whether
+auxiliary weights are divided by their mean before fitting. Default: \code{TRUE}.}
+
+\item{keep_nuisance_fits}{A single logical value indicating whether the four
+fitted HAL objects are retained in the returned \code{popart_fit} object.
+Default: \code{FALSE}.}
+
+\item{positivity_threshold}{A single numeric value strictly between zero and
+\code{0.5}. Estimated probabilities closer than this value to a boundary are
+flagged in diagnostics but are not truncated. Default: \code{0.01}.}
 }
 \value{
-An object of class \code{popart_control}.
+An object of class \code{popart_control}, implemented as a list with the
+following elements:
+\itemize{
+\item \code{n_cv_folds}, \code{n_lambda_values}, \code{n_cv_workers}, and \code{n_fit_workers}:
+validated integer fitting and worker counts.
+\item \code{parallel_backend}: the requested backend string; \code{"auto"} is
+resolved when fitting begins.
+\item \code{random_seed}: the validated integer cross-validation seed.
+\item \code{smoothness_orders}, \code{max_degree}, and \code{num_knots}: validated HAL
+basis settings.
+\item \code{treatment_probability}: the treated-arm randomization probability.
+\item \code{conf_level}: the Wald confidence level.
+\item \code{normalize_auxiliary_weights}: the weight-normalization flag.
+\item \code{keep_nuisance_fits}: the nuisance-fit retention flag.
+\item \code{positivity_threshold}: the diagnostic probability threshold.
+}
 }
 \description{
-Creates a validated control object for the HAL nuisance fits and Wald
-inference used by \code{\link[=fit_popart]{fit_popart()}}. The defaults preserve the current
-computational settings while keeping all resource choices explicit.
+Creates and validates the computational and inferential settings used by
+\code{\link[=fit_popart]{fit_popart()}}. The settings control the four highly adaptive lasso (HAL)
+nuisance fits, reproducible cross-validation folds, Wald intervals, weight
+normalization, and diagnostic reporting.
+}
+\details{
+Parallelism is available at one level at a time. Set \code{n_fit_workers > 1} to
+run complete nuisance fits concurrently, or set \code{n_cv_workers > 1} to run
+folds concurrently while the four nuisance fits are serial. A worker is an R
+process scheduled by the operating system; it is not a promise of a dedicated
+physical CPU core. The default uses one worker at both levels and is suitable
+for portable, reproducible examples.
+
+\code{parallel_backend = "auto"} selects PSOCK on Windows and forked processes on
+other supported operating systems. The HAL basis arguments are passed to
+\code{hal9001::fit_hal()}. Auxiliary-weight normalization rescales the supplied
+weights relative to unit-weighted trial records and records the scale factor
+in the fitted object's diagnostics.
+}
+\examples{
+# Portable serial settings used by default.
+control <- popart_control()
+control
+
+# Use three workers for cross-validation folds.
+cv_parallel <- popart_control(n_cv_workers = 3L)
+
+# Or run two of the four complete nuisance fits concurrently.
+fit_parallel <- popart_control(n_fit_workers = 2L, n_cv_workers = 1L)
+
 }

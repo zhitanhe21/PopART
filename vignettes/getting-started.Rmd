@@ -1,52 +1,145 @@
 ---
 title: "Getting started with popart"
-output: rmarkdown::html_vignette
-vignette: >
+author: "Zhitan He"
+date: "2026-08-05"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    number_sections: true
+abstract: |
+  This vignette gives a reproducible, offline introduction to fitting PopART
+  estimators with randomized-trial data and a target-population auxiliary
+  sample. It covers input preparation, estimation, inference, diagnostics,
+  and computation controls.
+vignette: |
   %\VignetteIndexEntry{Getting started with popart}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  error = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
 ```
 
-## Analysis inputs
+# Overview
 
-`popart` combines information from two data frames. The trial data contain the
-randomized treatment, response and censoring indicators, outcome, and baseline
-covariates. The auxiliary data represent the target population and need only
-the same baseline covariates plus an optional sampling weight.
+`popart` estimates treatment-arm means and treatment contrasts by combining a
+randomized-trial sample with an auxiliary sample representing the target
+population. It reports a trial-only estimator and a trial-plus-auxiliary
+estimator. Highly adaptive lasso (HAL) nuisance models are used for outcome,
+censoring, and trial-selection mechanisms.
 
-The package includes a small synthetic pair of CSV files so that the expected
-layout is concrete. These files are teaching fixtures, not real participant
-data or simulation results.
+The main workflow is:
 
-```{r read-data}
+1. import the trial and auxiliary files as two data frames;
+2. check their variable roles and coding;
+3. create an optional computation-control object;
+4. call `fit_popart()`; and
+5. inspect estimates, confidence intervals, and diagnostics.
+
+The package analyzes supplied data. It does not generate study data or run a
+Monte Carlo experiment.
+
+# Prepare the two input data sets
+
+## Required variable roles
+
+The trial data contain:
+
+- a binary randomized treatment;
+- a binary response indicator;
+- a binary censoring indicator among respondents;
+- a binary outcome where that outcome is observed; and
+- the baseline covariates used by the nuisance models.
+
+The auxiliary data contain the same baseline covariates and may contain an
+optional nonnegative target-population weight. They do not need treatment,
+response, censoring, or outcome columns.
+
+Missing outcomes are allowed when an outcome is not observed. A missing
+censoring indicator is allowed when the response indicator is zero. Covariates
+must be numeric or logical, have no missing values, and be available in both
+data sets. Categorical covariates should be encoded before fitting.
+
+## Load the vignette data
+
+The next chunk uses small synthetic CSV files installed in `inst/extdata` so
+that the vignette can build offline. This path lookup is specific to the
+vignette and is **not** how users normally locate their own files.
+
+```{r load-vignette-data}
 library(popart)
 
-trial <- read.csv(
-  system.file("extdata", "example_trial.csv", package = "popart")
-)
-auxiliary <- read.csv(
-  system.file("extdata", "example_auxiliary.csv", package = "popart")
-)
+example_dir <- system.file("extdata", package = "popart")
+trial <- read.csv(file.path(example_dir, "example_trial.csv"))
+auxiliary <- read.csv(file.path(example_dir, "example_auxiliary.csv"))
 
-names(trial)
-names(auxiliary)
+data.frame(
+  data_set = c("trial", "auxiliary"),
+  observations = c(nrow(trial), nrow(auxiliary)),
+  variables = c(ncol(trial), ncol(auxiliary))
+)
 ```
 
-Blank `outcome` values are allowed where the outcome is not observed. A blank
-`censored` value is allowed when `responded` is zero. Among respondents,
-`censored = 1` means the outcome is censored. Covariates must be numeric or
-logical and observed in both data frames.
+The installed files are teaching fixtures, not real participant data and not
+results from the package's repository-level simulation workflow.
 
-## Fit the estimators
+```{r inspect-vignette-data}
+names(trial)
+names(auxiliary)
 
-Column roles are named explicitly, so applied data do not need to use the
-example column names.
+with(trial, table(treatment, responded, useNA = "ifany"))
+summary(auxiliary$survey_weight)
+```
 
-```{r fit}
+For a real analysis, users would instead import files from their own machine or
+data platform and then pass the resulting data frames to `fit_popart()`:
+
+```{r real-user-import, eval=FALSE}
+trial_data <- read.csv("path/to/trial_data.csv")
+auxiliary_data <- read.csv("path/to/auxiliary_data.csv")
+```
+
+# Configure the illustrative fit
+
+`popart_control()` records both statistical and computational choices. The
+following deliberately small HAL basis and penalty grid keep this documentation
+example fast. These teaching settings are not a recommendation for a scientific
+analysis; use the package defaults or a prespecified, application-appropriate
+configuration for real data.
+
+```{r teaching-control}
+teaching_control <- popart_control(
+  n_cv_folds = 3L,
+  n_lambda_values = 10L,
+  n_cv_workers = 1L,
+  n_fit_workers = 1L,
+  random_seed = 20260805L,
+  max_degree = 1L,
+  num_knots = c(2L, 1L),
+  keep_nuisance_fits = FALSE
+)
+
+teaching_control
+```
+
+Serial execution makes this vignette reproducible across operating systems and
+avoids taking over the reader's computer during package installation.
+
+# Fit PopART
+
+Column roles are supplied explicitly, so users do not need to rename their
+variables to match the vignette. `treatment_values` is ordered as control, then
+treated. If an auxiliary sample has no sampling-weight column, omit
+`auxiliary_weight` and unit weights will be used.
+
+```{r fit-popart}
 fit <- fit_popart(
   trial_data = trial,
   auxiliary_data = auxiliary,
@@ -61,66 +154,134 @@ fit <- fit_popart(
     "baseline_score_2"
   ),
   auxiliary_weight = "survey_weight",
-  treatment_values = c(0, 1)
+  treatment_values = c(0, 1),
+  control = teaching_control
 )
+
+fit
 ```
 
-`treatment_values` is ordered as control, then treated. If the auxiliary sample
-has no sampling weight, omit `auxiliary_weight`; unit weights will be used.
+# Inspect estimates and uncertainty
 
-## Inspect results
+The fitted object reports control and treated means, their risk difference,
+and their risk ratio for both estimators. `trial_only` uses the randomized
+trial, whereas `trial_auxiliary` also uses the target-population covariate
+distribution supplied by the auxiliary data.
 
-```{r results}
-fit
-summary(fit)
+```{r inspect-estimates}
+as.data.frame(fit)
+
 coef(fit, estimator = "trial_auxiliary")
-vcov(fit, estimator = "trial_auxiliary")
 confint(fit, estimator = "trial_auxiliary")
 ```
 
-The result includes arm-specific means, a risk difference, and a risk ratio for
-both the trial-only comparator and the trial-plus-auxiliary analysis. It also
-contains nuisance-fit timing and diagnostics. Diagnostics flag potentially
-unstable fitted probabilities; they do not automatically change or truncate
-the estimates.
+The corresponding covariance matrix is available through the standard
+`vcov()` generic.
 
-## Control computation
-
-Serial execution is the default. A machine with additional available capacity
-can run complete nuisance fits concurrently:
-
-```{r controls}
-control <- popart_control(
-  n_fit_workers = 2,
-  n_cv_workers = 1,
-  keep_nuisance_fits = FALSE
-)
-
-fit_parallel <- fit_popart(
-  trial_data = trial,
-  auxiliary_data = auxiliary,
-  outcome = "outcome",
-  treatment = "treatment",
-  response = "responded",
-  censoring = "censored",
-  covariates = c(
-    "baseline_risk",
-    "baseline_binary",
-    "baseline_score_1",
-    "baseline_score_2"
-  ),
-  auxiliary_weight = "survey_weight",
-  control = control
-)
+```{r inspect-covariance}
+round(vcov(fit, estimator = "trial_auxiliary"), 5)
 ```
 
-Alternatively, keep `n_fit_workers = 1` and increase `n_cv_workers` to
-parallelize CV folds. The control object rejects nested use of both levels.
+# Quality control and diagnostics
 
-## Repository simulation workflow
+`summary()` displays sample sizes, both sets of estimates, and any diagnostic
+messages. The fit also stores nuisance-model timing and fitted-probability
+ranges for more focused review.
 
-Data generation and Monte Carlo replication are intentionally outside the
-installed package. When working from the source repository, see the
-"Repository simulation workflow" section of the root `README.md`. That
-workflow is for method evaluation; an applied analysis begins with the two
-user-supplied data frames shown above.
+```{r diagnostics}
+summary(fit)
+fit$fit_diagnostics
+fit$diagnostics$prediction_ranges
+fit$diagnostics$messages
+```
+
+Diagnostic thresholds only flag fitted probabilities near a boundary. They do
+not truncate predictions or silently alter the estimator. A warning should be
+investigated in the context of the data-generating and sampling processes.
+
+# Computational controls
+
+The default is one complete-fit worker and one CV worker. On a machine with
+available capacity, a user can create a control object that runs complete
+nuisance fits concurrently:
+
+```{r complete-fit-parallel-control}
+fit_parallel_control <- popart_control(
+  n_fit_workers = 2L,
+  n_cv_workers = 1L
+)
+
+fit_parallel_control
+```
+
+Alternatively, set `n_fit_workers = 1L` and increase `n_cv_workers` to
+parallelize cross-validation folds. The two levels cannot both be greater than
+one, which prevents accidental nested parallelism. Creating the control object
+does not start workers; workers are used only when it is passed to
+`fit_popart()`.
+
+# Repository simulation workflow
+
+Data generation, Monte Carlo replication, and the cross-replication global
+scheduler are intentionally outside the installed package. When working from a
+source checkout, the root `README.md` explains that research workflow. Those
+tools evaluate the method; they are separate from the applied workflow in this
+vignette.
+
+# Frequently asked questions
+
+## Does `popart` read CSV files directly?
+
+No. `fit_popart()` accepts data frames. Use `read.csv()`, `readr`, a database
+client, or another appropriate import tool first. This separation lets the
+package work with many storage formats without embedding file-system behavior
+in the estimator.
+
+## Why are there two estimators in the output?
+
+The trial-only result is a comparator based on the randomized trial. The
+trial-plus-auxiliary result additionally targets the auxiliary population's
+covariate distribution. Differences between them can therefore reflect the
+information contributed by that target-population sample.
+
+## Can treatment be labeled instead of coded 0 and 1?
+
+Yes. Supply the observed control and treated values, in that order, through
+`treatment_values`, for example `c("usual care", "intervention")`.
+
+## Why might my results differ from this vignette?
+
+This vignette uses synthetic data and a reduced HAL configuration solely to
+keep package documentation fast. Results depend on the supplied data, variable
+coding, auxiliary weights, randomization probability, random seed, and HAL
+settings. Record all of these choices for a reproducible analysis.
+
+## Which parallel option should I use?
+
+Choose one level: either multiple complete-fit workers or multiple CV workers.
+Start conservatively because logical processors, available memory, and other
+workloads differ across computers. Serial settings remain the most portable.
+
+# Acknowledgments
+
+The implementation relies on the open-source R ecosystem, including
+`hal9001` for HAL nuisance fitting and `knitr` and `rmarkdown` for this
+documentation. The trial-plus-auxiliary AIPW framework follows the unpublished
+manuscript by Richardson, Shook-Sa, and Hudgens; the current HAL nuisance-model
+implementation is a separate package design choice. We thank the maintainers
+and contributors of the open-source projects used here.
+
+# References
+
+- Richardson, B. D., Shook-Sa, B. E., and Hudgens, M. G. (n.d.). Causal
+  Inference from Cluster-Randomized Trials with Differential Nonresponse.
+  Unpublished manuscript submitted to *Biometrics*.
+
+- Benkeser, D. and van der Laan, M. (2016). The Highly Adaptive Lasso
+  Estimator. *2016 IEEE International Conference on Data Science and Advanced
+  Analytics*, 689--696. doi: [10.1109/DSAA.2016.93](https://doi.org/10.1109/DSAA.2016.93).
+
+- Hejazi, N. S., Coyle, J. R., and van der Laan, M. J. (2020). `hal9001`:
+  Scalable highly adaptive lasso regression in R. *Journal of Open Source
+  Software*, 5(53), 2526. doi:
+  [10.21105/joss.02526](https://doi.org/10.21105/joss.02526).

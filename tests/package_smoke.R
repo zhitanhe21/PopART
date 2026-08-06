@@ -40,21 +40,37 @@ expect_error(
 )
 expect_error(popart_control(n_cv_folds = 2L), "n_cv_folds")
 
-trial_path <- system.file("extdata", "example_trial.csv", package = "popart")
-auxiliary_path <- system.file(
-  "extdata",
-  "example_auxiliary.csv",
-  package = "popart"
+base_cars <- datasets::mtcars
+cars <- base_cars[
+  rep(seq_len(nrow(base_cars)), 2L),
+  ,
+  drop = FALSE
+]
+rownames(cars) <- NULL
+row_id <- seq_len(nrow(cars))
+trial <- transform(
+  cars,
+  outcome = as.integer(mpg >= stats::median(mpg)),
+  treatment = as.integer(row_id %% 2L == 0L),
+  responded = as.integer(row_id %% 5L != 0L),
+  censored = as.integer(row_id %% 3L == 0L)
 )
-stopifnot(nzchar(trial_path), nzchar(auxiliary_path))
-trial <- utils::read.csv(trial_path)
-auxiliary <- utils::read.csv(auxiliary_path)
+trial$censored[trial$responded == 0L] <- NA_integer_
+trial$outcome[
+  trial$responded == 0L | trial$censored == 1L
+] <- NA_integer_
+auxiliary <- data.frame(
+  wt = cars$wt,
+  hp = cars$hp,
+  survey_weight = 1 + (row_id %% 3L) / 10
+)
 stopifnot(
-  nrow(trial) == 200L,
-  nrow(auxiliary) == 200L,
+  nrow(trial) == 64L,
+  nrow(auxiliary) == 64L,
   all(c("outcome", "treatment", "responded", "censored") %in% names(trial)),
   !any(c("outcome", "treatment", "responded", "censored") %in%
-         names(auxiliary))
+         names(auxiliary)),
+  all(c("wt", "hp", "survey_weight") %in% names(auxiliary))
 )
 
 arguments <- list(
@@ -64,12 +80,7 @@ arguments <- list(
   treatment = "treatment",
   response = "responded",
   censoring = "censored",
-  covariates = c(
-    "baseline_risk",
-    "baseline_binary",
-    "baseline_score_1",
-    "baseline_score_2"
-  ),
+  covariates = c("wt", "hp"),
   auxiliary_weight = "survey_weight",
   treatment_values = c(0, 1),
   control = control
@@ -78,10 +89,10 @@ arguments <- list(
 prepare_input <- getFromNamespace(".prepare_popart_input", "popart")
 prepared <- do.call(prepare_input, arguments)
 stopifnot(
-  nrow(prepared$data) == 400L,
-  identical(unname(prepared$sample_sizes[c("trial", "auxiliary")]), c(200L, 200L)),
-  all(prepared$data$S[seq_len(200L)] == 1L),
-  all(prepared$data$S[201:400] == 0L)
+  nrow(prepared$data) == 128L,
+  identical(unname(prepared$sample_sizes[c("trial", "auxiliary")]), c(64L, 64L)),
+  all(prepared$data$S[seq_len(64L)] == 1L),
+  all(prepared$data$S[65:128] == 0L)
 )
 
 make_jobs <- getFromNamespace(".make_popart_nuisance_jobs", "popart")

@@ -6,9 +6,10 @@ representing the target population. The package fits highly adaptive lasso
 weighting (AIPW) analyses: a trial-only comparator and an analysis that also
 uses the auxiliary sample.
 
-The installed package analyzes data supplied by the user. It does not generate
-research data or run a Monte Carlo experiment. Repository-only simulation and
-method-validation tools are described in the
+The formal package accepts only data frames supplied by the user. It does not
+install example data, generate research data, or run a Monte Carlo experiment.
+Repository-only teaching data, simulation, and method-validation tools are
+described in the
 [simulation workflow](#repository-simulation-workflow) below.
 
 ## Installation
@@ -44,19 +45,29 @@ read with `read.csv()` before calling the estimator.
 
 ## Basic analysis
 
-The package includes two small synthetic CSV files solely to demonstrate the
-input structure:
+The formal package does not install example datasets. In an applied analysis,
+import your own study files before calling `fit_popart()`:
 
 ```r
 library(popart)
 
-trial <- read.csv(
-  system.file("extdata", "example_trial.csv", package = "popart")
-)
-auxiliary <- read.csv(
-  system.file("extdata", "example_auxiliary.csv", package = "popart")
-)
+trial <- read.csv("path/to/your_trial.csv")
+auxiliary <- read.csv("path/to/your_auxiliary.csv")
+```
 
+For a repository-only teaching run, a source checkout provides fixed synthetic
+CSVs under `simulation/data/`. These files are not part of the installed
+package:
+
+```r
+trial <- read.csv("simulation/data/example_trial.csv")
+auxiliary <- read.csv("simulation/data/example_auxiliary.csv")
+```
+
+After importing either your study data or the repository teaching data, fit the
+same formal package API:
+
+```r
 fit <- fit_popart(
   trial_data = trial,
   auxiliary_data = auxiliary,
@@ -86,11 +97,12 @@ Fitted nuisance models are omitted by default to keep the result smaller and
 avoid retaining input-derived design matrices. Set `keep_nuisance_fits = TRUE`
 in `popart_control()` only when those models are needed after estimation.
 
-The included CSV files are a fixed synthetic snapshot generated from the
-repository's reference data-generating process with seed `20260805`, 20
-clusters, 200 trial records, and 200 auxiliary records. Missing trial outcomes
-and censoring indicators are represented by blank CSV fields when they are not
-observed. The auxiliary file intentionally omits trial-only variables.
+The repository teaching CSV files are a fixed synthetic snapshot generated
+from the reference data-generating process with seed `20260805`, 20 clusters,
+200 trial records, and 200 auxiliary records. Missing trial outcomes and
+censoring indicators are represented by blank CSV fields when they are not
+observed. The auxiliary file intentionally omits trial-only variables. These
+files stay under `simulation/data/` and are not installed with the package.
 
 ## Computation controls
 
@@ -125,9 +137,11 @@ Its main components are:
 
 - `simulation/R/`: data generation, reference estimators, global scheduling,
   persistence, and reporting functions;
+- `simulation/data/`: fixed synthetic CSVs for repository teaching runs;
 - `simulation/scripts/run_monte_carlo.R`: command-line Monte Carlo entry point;
 - `simulation/scripts/analyze_results.R`: regenerate reports and figures;
-- `simulation/scripts/create_example_data.R`: recreate the fixed package CSVs;
+- `simulation/scripts/create_example_data.R`: recreate the repository teaching
+  CSVs in `simulation/data/`;
 - `simulation/tests/formal_api_equivalence.R`: compare `fit_popart()` with the
   preserved reference equations;
 - `simulation/results/`: ignored generated results, checkpoints, and caches.
@@ -217,7 +231,7 @@ preserved reference implementation:
 Rscript simulation/tests/formal_api_equivalence.R
 ```
 
-The synthetic CSV files in `inst/extdata/` are teaching fixtures, not benchmark
-results or real participant data. Package users can also see
-[`vignettes/getting-started.Rmd`](vignettes/getting-started.Rmd) for the shorter
-input-to-estimate walkthrough installed with the package.
+The synthetic CSV files in `simulation/data/` are teaching fixtures, not
+benchmark results or real participant data. They remain repository-only and
+are not installed as package data. From the repository root, regenerate them
+with `Rscript simulation/scripts/create_example_data.R`.

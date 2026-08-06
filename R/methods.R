@@ -54,12 +54,26 @@
 #'   }
 #'
 #' @examples
-#' trial <- utils::read.csv(system.file(
-#'   "extdata", "example_trial.csv", package = "popart"
-#' ))
-#' auxiliary <- utils::read.csv(system.file(
-#'   "extdata", "example_auxiliary.csv", package = "popart"
-#' ))
+#' # Deterministically recode a built-in data set for a runnable illustration.
+#' cars <- datasets::mtcars[
+#'   rep(seq_len(nrow(datasets::mtcars)), 2L),
+#'   ,
+#'   drop = FALSE
+#' ]
+#' rownames(cars) <- NULL
+#' row_id <- seq_len(nrow(cars))
+#' trial <- transform(
+#'   cars,
+#'   outcome = as.integer(mpg >= stats::median(mpg)),
+#'   treatment = as.integer(row_id %% 2L == 0L),
+#'   responded = as.integer(row_id %% 5L != 0L),
+#'   censored = as.integer(row_id %% 3L == 0L)
+#' )
+#' trial$censored[trial$responded == 0L] <- NA_integer_
+#' trial$outcome[
+#'   trial$responded == 0L | trial$censored == 1L
+#' ] <- NA_integer_
+#' auxiliary <- cars[c("wt", "hp")]
 #' fit <- fit_popart(
 #'   trial_data = trial,
 #'   auxiliary_data = auxiliary,
@@ -67,12 +81,12 @@
 #'   treatment = "treatment",
 #'   response = "responded",
 #'   censoring = "censored",
-#'   covariates = c("baseline_risk", "baseline_binary"),
-#'   auxiliary_weight = "survey_weight",
+#'   covariates = c("wt", "hp"),
 #'   control = popart_control(
 #'     n_lambda_values = 5L,
 #'     max_degree = 1L,
-#'     num_knots = 1L
+#'     num_knots = 1L,
+#'     random_seed = 20260806L
 #'   )
 #' )
 #'

@@ -100,18 +100,34 @@
 #' *Journal of Open Source Software*. \doi{10.21105/joss.02526}.
 #'
 #' @examples
-#' trial_file <- system.file("extdata", "example_trial.csv", package = "popart")
-#' auxiliary_file <- system.file(
-#'   "extdata", "example_auxiliary.csv", package = "popart"
+#' # Deterministically recode a built-in data set for a runnable illustration.
+#' # In an applied analysis, import the two study data frames instead.
+#' cars <- datasets::mtcars[
+#'   rep(seq_len(nrow(datasets::mtcars)), 2L),
+#'   ,
+#'   drop = FALSE
+#' ]
+#' rownames(cars) <- NULL
+#' row_id <- seq_len(nrow(cars))
+#' trial <- transform(
+#'   cars,
+#'   outcome = as.integer(mpg >= stats::median(mpg)),
+#'   treatment = as.integer(row_id %% 2L == 0L),
+#'   responded = as.integer(row_id %% 5L != 0L),
+#'   censored = as.integer(row_id %% 3L == 0L)
 #' )
-#' trial <- utils::read.csv(trial_file)
-#' auxiliary <- utils::read.csv(auxiliary_file)
+#' trial$censored[trial$responded == 0L] <- NA_integer_
+#' trial$outcome[
+#'   trial$responded == 0L | trial$censored == 1L
+#' ] <- NA_integer_
+#' auxiliary <- cars[c("wt", "hp")]
 #'
 #' # Reduced HAL settings keep the help-page example quick.
 #' example_control <- popart_control(
 #'   n_lambda_values = 5L,
 #'   max_degree = 1L,
-#'   num_knots = 1L
+#'   num_knots = 1L,
+#'   random_seed = 20260806L
 #' )
 #' fit <- fit_popart(
 #'   trial_data = trial,
@@ -120,8 +136,7 @@
 #'   treatment = "treatment",
 #'   response = "responded",
 #'   censoring = "censored",
-#'   covariates = c("baseline_risk", "baseline_binary"),
-#'   auxiliary_weight = "survey_weight",
+#'   covariates = c("wt", "hp"),
 #'   control = example_control
 #' )
 #' fit$estimates

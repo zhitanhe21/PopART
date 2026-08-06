@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
-# Regenerate the fixed synthetic CSV files installed with the package. Run from
-# the repository root. This script is development tooling and is not installed.
+# Regenerate the repository-only synthetic teaching CSV files. Run from the
+# repository root. This script is simulation tooling and is not installed.
 
 project_dir <- normalizePath(getwd(), mustWork = TRUE)
 loader <- file.path(project_dir, "simulation", "R", "load_simulation.R")
@@ -60,7 +60,7 @@ auxiliary$baseline_score_1 <- round(auxiliary$baseline_score_1, 6L)
 auxiliary$baseline_score_2 <- round(auxiliary$baseline_score_2, 6L)
 auxiliary$survey_weight <- round(auxiliary$survey_weight, 6L)
 
-output_dir <- file.path(project_dir, "inst", "extdata")
+output_dir <- file.path(project_dir, "simulation", "data")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 utils::write.csv(
   trial,
@@ -74,4 +74,4 @@ utils::write.csv(
   row.names = FALSE,
   na = ""
 )
-cat("Regenerated fixed package example data in", output_dir, "\n")
+cat("Regenerated repository teaching data in", output_dir, "\n")

@@ -1,9 +1,12 @@
 * text=auto
 
 *.R text eol=lf
+*.Rmd text eol=lf
 *.Rd text eol=lf
+*.csv text eol=lf
 *.md text eol=lf
 *.sh text eol=lf
+.gitkeep text eol=lf
 .Rbuildignore text eol=lf
 .gitattributes text eol=lf
 .gitignore text eol=lf

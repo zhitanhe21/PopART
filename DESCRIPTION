@@ -1,6 +1,6 @@
-Package: aipwLocalDemo
+Package: popart
 Type: Package
-Title: Local AIPW and HAL Simulation Workflows
+Title: Population-Augmented Analysis of Randomized Trials
 Version: 0.1.0
 Authors@R: person(
     given = "Zhitan",
@@ -8,27 +8,26 @@ Authors@R: person(
     email = "zhitanhe21@users.noreply.github.com",
     role = c("aut", "cre")
   )
-Description: Runs reproducible augmented inverse probability weighting
-    simulations with highly adaptive lasso nuisance fits. Provides local
-    resource planning, a cross-run global fit scheduler, checkpointing, and
-    diagnostic reporting for the Simulation 2 research workflow.
+Description: Fits augmented inverse probability weighting estimators to a
+    randomized-trial sample and an auxiliary target-population sample. Highly
+    adaptive lasso nuisance regressions are used to estimate trial selection,
+    outcome, and censoring mechanisms. The main interface accepts user-supplied
+    data frames and returns arm means, treatment contrasts, covariance
+    estimates, Wald confidence intervals, and fit diagnostics.
 License: file LICENSE
 Encoding: UTF-8
 Depends:
     R (>= 4.1.0)
 Imports:
-    callr,
     doParallel,
-    dplyr,
     foreach,
-    ggplot2,
     hal9001,
     parallel,
     stats,
-    tidyr,
     utils
 Suggests:
-    digest,
-    rstudioapi
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3

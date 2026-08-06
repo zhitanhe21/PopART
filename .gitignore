@@ -1,9 +1,5 @@
 cache/
 output/
-simulation/sim_data/sim2/*
-!simulation/sim_data/sim2/.gitkeep
-simulation/sim_figures/sim2/*
-!simulation/sim_figures/sim2/.gitkeep
 .Rhistory
 .RData
 Rplots.pdf

@@ -2,10 +2,7 @@
 ^cache$
 ^docs$
 ^examples$
-^simulation$
-^tests/test_global_scheduler[.]R$
-^tests/test_persistence_helpers[.]R$
-^tests/test_profiles[.]R$
+^simulation($|/)
 ^[.]git$
 ^[.]github$
 ^[.]gitignore$

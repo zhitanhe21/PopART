@@ -1,0 +1,126 @@
+---
+title: "Getting started with popart"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with popart}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+## Analysis inputs
+
+`popart` combines information from two data frames. The trial data contain the
+randomized treatment, response and censoring indicators, outcome, and baseline
+covariates. The auxiliary data represent the target population and need only
+the same baseline covariates plus an optional sampling weight.
+
+The package includes a small synthetic pair of CSV files so that the expected
+layout is concrete. These files are teaching fixtures, not real participant
+data or simulation results.
+
+```{r read-data}
+library(popart)
+
+trial <- read.csv(
+  system.file("extdata", "example_trial.csv", package = "popart")
+)
+auxiliary <- read.csv(
+  system.file("extdata", "example_auxiliary.csv", package = "popart")
+)
+
+names(trial)
+names(auxiliary)
+```
+
+Blank `outcome` values are allowed where the outcome is not observed. A blank
+`censored` value is allowed when `responded` is zero. Among respondents,
+`censored = 1` means the outcome is censored. Covariates must be numeric or
+logical and observed in both data frames.
+
+## Fit the estimators
+
+Column roles are named explicitly, so applied data do not need to use the
+example column names.
+
+```{r fit}
+fit <- fit_popart(
+  trial_data = trial,
+  auxiliary_data = auxiliary,
+  outcome = "outcome",
+  treatment = "treatment",
+  response = "responded",
+  censoring = "censored",
+  covariates = c(
+    "baseline_risk",
+    "baseline_binary",
+    "baseline_score_1",
+    "baseline_score_2"
+  ),
+  auxiliary_weight = "survey_weight",
+  treatment_values = c(0, 1)
+)
+```
+
+`treatment_values` is ordered as control, then treated. If the auxiliary sample
+has no sampling weight, omit `auxiliary_weight`; unit weights will be used.
+
+## Inspect results
+
+```{r results}
+fit
+summary(fit)
+coef(fit, estimator = "trial_auxiliary")
+vcov(fit, estimator = "trial_auxiliary")
+confint(fit, estimator = "trial_auxiliary")
+```
+
+The result includes arm-specific means, a risk difference, and a risk ratio for
+both the trial-only comparator and the trial-plus-auxiliary analysis. It also
+contains nuisance-fit timing and diagnostics. Diagnostics flag potentially
+unstable fitted probabilities; they do not automatically change or truncate
+the estimates.
+
+## Control computation
+
+Serial execution is the default. A machine with additional available capacity
+can run complete nuisance fits concurrently:
+
+```{r controls}
+control <- popart_control(
+  n_fit_workers = 2,
+  n_cv_workers = 1,
+  keep_nuisance_fits = FALSE
+)
+
+fit_parallel <- fit_popart(
+  trial_data = trial,
+  auxiliary_data = auxiliary,
+  outcome = "outcome",
+  treatment = "treatment",
+  response = "responded",
+  censoring = "censored",
+  covariates = c(
+    "baseline_risk",
+    "baseline_binary",
+    "baseline_score_1",
+    "baseline_score_2"
+  ),
+  auxiliary_weight = "survey_weight",
+  control = control
+)
+```
+
+Alternatively, keep `n_fit_workers = 1` and increase `n_cv_workers` to
+parallelize CV folds. The control object rejects nested use of both levels.
+
+## Repository simulation workflow
+
+Data generation and Monte Carlo replication are intentionally outside the
+installed package. When working from the source repository, see the
+"Repository simulation workflow" section of the root `README.md`. That
+workflow is for method evaluation; an applied analysis begins with the two
+user-supplied data frames shown above.

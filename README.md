@@ -24,6 +24,18 @@ The source currently uses the repository's existing license notice. Confirm
 the terms in [`LICENSE`](LICENSE) before redistributing this package or making
 the repository public.
 
+## Installed tutorial
+
+After installation, open the complete input-to-results tutorial from R:
+
+```r
+vignette("getting-started", package = "popart")
+```
+
+The tutorial is built with the package, runs offline, and uses only a small
+in-memory illustration. Repository simulation data remain outside the
+installed package.
+
 ## Data layout
 
 `fit_popart()` takes two data frames:

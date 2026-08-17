@@ -14,8 +14,15 @@
 #' run complete nuisance fits concurrently, or set `n_cv_workers > 1` to run
 #' folds concurrently while the four nuisance fits are serial. A worker is an R
 #' process scheduled by the operating system; it is not a promise of a dedicated
-#' physical CPU core. The default uses one worker at both levels and is suitable
-#' for portable, reproducible examples.
+#' physical CPU core.
+#'
+#' By default, `n_fit_workers = "auto"` queries the CPU slots available to the R
+#' process with [parallelly::availableCores()]. The resolved value is
+#' `max(1, min(4, available_cpu_slots - 2))`. This leaves at least two detected
+#' CPU slots outside the complete-fit pool when possible and caps the result at four
+#' because one PopART analysis has four nuisance fits.
+#' If `n_cv_workers > 1`, automatic fit-level parallelism resolves to one so
+#' that only the CV folds run concurrently.
 #'
 #' `parallel_backend = "auto"` selects PSOCK on Windows and forked processes on
 #' other supported operating systems. The HAL basis arguments are passed to
@@ -29,10 +36,13 @@
 #'   penalty values evaluated within each HAL fit. Default: `50L`.
 #' @param n_cv_workers A single positive integer, no greater than `n_cv_folds`,
 #'   giving the number of R workers used across cross-validation folds. It must
-#'   equal one when `n_fit_workers > 1`. Default: `1L`.
-#' @param n_fit_workers A single integer from 1 through 4 giving the maximum
-#'   number of complete nuisance fits run concurrently. It must equal one when
-#'   `n_cv_workers > 1`. Default: `1L`.
+#'   equal one when a manually specified `n_fit_workers` is greater than one.
+#'   Default: `1L`.
+#' @param n_fit_workers Either `"auto"` or a single integer from 1 through 4
+#'   giving the maximum number of complete nuisance fits run concurrently.
+#'   Automatic mode uses the conservative CPU-based rule described above and
+#'   resolves to one when `n_cv_workers > 1`. A manually specified value greater
+#'   than one cannot be combined with `n_cv_workers > 1`. Default: `"auto"`.
 #' @param parallel_backend A character string selecting the complete-fit
 #'   parallel backend: `"auto"`, `"fork"`, or `"psock"`. The fork backend is
 #'   unavailable on Windows. Default: `"auto"`.
@@ -52,8 +62,13 @@
 #' @param normalize_auxiliary_weights A single logical value indicating whether
 #'   auxiliary weights are divided by their mean before fitting. Default: `TRUE`.
 #' @param keep_nuisance_fits A single logical value indicating whether the four
-#'   fitted HAL objects are retained in the returned `popart_fit` object.
-#'   Default: `FALSE`.
+#'   fitted HAL objects, including their underlying `cv.glmnet` fits, are
+#'   retained in the returned `popart_fit` object. When `FALSE`, HAL still runs
+#'   the same cross-validation and produces the same predictions, but its
+#'   unneeded `cv.glmnet` object is discarded to reduce memory use and worker
+#'   transfer overhead. This does not skip `glmnet` computation or reduce the
+#'   peak memory used while an individual model is being fitted. Default:
+#'   `FALSE`.
 #' @param positivity_threshold A single numeric value strictly between zero and
 #'   `0.5`. Estimated probabilities closer than this value to a boundary are
 #'   flagged in diagnostics but are not truncated. Default: `0.01`.
@@ -62,7 +77,12 @@
 #'   following elements:
 #'   \itemize{
 #'   \item `n_cv_folds`, `n_lambda_values`, `n_cv_workers`, and `n_fit_workers`:
-#'     validated integer fitting and worker counts.
+#'     validated integer fitting and resolved worker counts.
+#'   \item `n_fit_workers_auto`: whether the complete-fit worker count was
+#'     selected automatically.
+#'   \item `detected_cpu_slots`: the positive number of logical CPU slots or
+#'     scheduler-limited slots reported as available when the control object was
+#'     created.
 #'   \item `parallel_backend`: the requested backend string; `"auto"` is
 #'     resolved when fitting begins.
 #'   \item `random_seed`: the validated integer cross-validation seed.
@@ -76,12 +96,15 @@
 #'   }
 #'
 #' @examples
-#' # Portable serial settings used by default.
-#' control <- popart_control()
-#' control
+#' # The default selects a conservative complete-fit worker count automatically.
+#' automatic <- popart_control()
+#' automatic
+#'
+#' # Request fully serial execution explicitly.
+#' serial <- popart_control(n_fit_workers = 1L, n_cv_workers = 1L)
 #'
 #' # Use three workers for cross-validation folds.
-#' cv_parallel <- popart_control(n_cv_workers = 3L)
+#' cv_parallel <- popart_control(n_fit_workers = 1L, n_cv_workers = 3L)
 #'
 #' # Or run two of the four complete nuisance fits concurrently.
 #' fit_parallel <- popart_control(n_fit_workers = 2L, n_cv_workers = 1L)
@@ -91,7 +114,7 @@ popart_control <- function(
     n_cv_folds = 3L,
     n_lambda_values = 50L,
     n_cv_workers = 1L,
-    n_fit_workers = 1L,
+    n_fit_workers = "auto",
     parallel_backend = c("auto", "fork", "psock"),
     random_seed = 1L,
     smoothness_orders = 1L,
@@ -107,11 +130,30 @@ popart_control <- function(
   n_cv_folds <- .popart_count(n_cv_folds, "n_cv_folds", minimum = 3L)
   n_lambda_values <- .popart_count(n_lambda_values, "n_lambda_values")
   n_cv_workers <- .popart_count(n_cv_workers, "n_cv_workers")
-  n_fit_workers <- .popart_count(
-    n_fit_workers,
-    "n_fit_workers",
-    maximum = 4L
-  )
+  detected_cpu_slots <- .popart_available_cpu_slots()
+  n_fit_workers_auto <- is.character(n_fit_workers) &&
+    length(n_fit_workers) == 1L &&
+    !is.na(n_fit_workers) &&
+    identical(n_fit_workers, "auto")
+  if (n_fit_workers_auto) {
+    n_fit_workers <- if (n_cv_workers > 1L) {
+      1L
+    } else {
+      .popart_auto_fit_workers(detected_cpu_slots)
+    }
+  } else {
+    if (is.character(n_fit_workers)) {
+      stop(
+        "n_fit_workers must be \"auto\" or an integer between 1 and 4.",
+        call. = FALSE
+      )
+    }
+    n_fit_workers <- .popart_count(
+      n_fit_workers,
+      "n_fit_workers",
+      maximum = 4L
+    )
+  }
   random_seed <- .popart_count(
     random_seed,
     "random_seed",
@@ -172,6 +214,8 @@ popart_control <- function(
       n_lambda_values = n_lambda_values,
       n_cv_workers = n_cv_workers,
       n_fit_workers = n_fit_workers,
+      n_fit_workers_auto = n_fit_workers_auto,
+      detected_cpu_slots = detected_cpu_slots,
       parallel_backend = parallel_backend,
       random_seed = random_seed,
       smoothness_orders = smoothness_orders,
@@ -205,11 +249,58 @@ popart_control <- function(
 print.popart_control <- function(x, ...) {
   cat("PopART estimation controls\n")
   cat("  CV folds / workers: ", x$n_cv_folds, " / ", x$n_cv_workers, "\n", sep = "")
-  cat("  Complete-fit workers: ", x$n_fit_workers, "\n", sep = "")
+  worker_note <- if (isTRUE(x$n_fit_workers_auto)) {
+    if (x$n_cv_workers > 1L) {
+      paste0(
+        " (auto: fit-level parallelism disabled while CV uses ",
+        x$n_cv_workers,
+        " workers)"
+      )
+    } else {
+      paste0(" (auto from ", x$detected_cpu_slots, " available CPU slots)")
+    }
+  } else {
+    " (manual)"
+  }
+  cat(
+    "  Complete-fit workers: ",
+    x$n_fit_workers,
+    worker_note,
+    "\n",
+    sep = ""
+  )
   cat("  Parallel backend: ", x$parallel_backend, "\n", sep = "")
   cat("  HAL knots: ", paste(x$num_knots, collapse = ", "), "\n", sep = "")
   cat("  Confidence level: ", x$conf_level, "\n", sep = "")
   invisible(x)
+}
+
+
+.popart_available_cpu_slots <- function() {
+  available <- tryCatch(
+    parallelly::availableCores(),
+    error = function(condition) 1L
+  )
+  if (length(available) < 1L) {
+    return(1L)
+  }
+  available <- suppressWarnings(as.integer(available[[1L]]))
+  if (length(available) != 1L || is.na(available) || available < 1L) {
+    return(1L)
+  }
+  available
+}
+
+
+.popart_auto_fit_workers <- function(available_cpu_slots) {
+  numeric_cpu_slots <- suppressWarnings(as.numeric(available_cpu_slots))
+  available_cpu_slots <- suppressWarnings(as.integer(available_cpu_slots))
+  if (length(numeric_cpu_slots) != 1L || !is.finite(numeric_cpu_slots) ||
+      length(available_cpu_slots) != 1L || is.na(available_cpu_slots) ||
+      numeric_cpu_slots != available_cpu_slots || available_cpu_slots < 1L) {
+    stop("available_cpu_slots must be a positive integer.", call. = FALSE)
+  }
+  min(4L, max(1L, available_cpu_slots - 2L))
 }
 
 

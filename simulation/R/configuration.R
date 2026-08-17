@@ -167,17 +167,22 @@ read_positive_numeric_env <- function(name, default = NA_real_) {
 #' does not allocate cores by itself.
 #'
 #' @param prefer_physical Logical, whether to prefer physical cores when R can
-#'   detect both physical and logical cores.
+#'   detect both physical and logical cores. The default is `FALSE` because the
+#'   local worker budget is expressed in available logical CPU slots.
 #'
 #' @return A positive integer CPU count.
 #' @export
-detect_local_cores <- function(prefer_physical = TRUE) {
+detect_local_cores <- function(prefer_physical = FALSE) {
   override <- read_positive_int_env("HAL_TOTAL_CORES", NA_integer_)
   if (!is.na(override)) return(override)
 
   slurm_cores <- read_positive_int_env("SLURM_CPUS_PER_TASK", NA_integer_)
   if (!is.na(slurm_cores)) return(slurm_cores)
 
+  available <- tryCatch(
+    suppressWarnings(as.integer(parallelly::availableCores()[[1L]])),
+    error = function(e) NA_integer_
+  )
   nproc <- tryCatch(
     suppressWarnings(as.integer(system2("nproc", stdout = TRUE, stderr = FALSE)[[1]])),
     error = function(e) NA_integer_
@@ -185,9 +190,16 @@ detect_local_cores <- function(prefer_physical = TRUE) {
 
   physical <- suppressWarnings(parallel::detectCores(logical = FALSE))
   logical <- suppressWarnings(parallel::detectCores(logical = TRUE))
-  detected <- if (prefer_physical && !is.na(physical)) physical else logical
-  if (is.na(detected)) detected <- if (!is.na(logical)) logical else 1L
+  detected <- if (prefer_physical && !is.na(physical)) {
+    physical
+  } else if (!is.na(available)) {
+    available
+  } else {
+    logical
+  }
+  if (is.na(detected)) detected <- 1L
 
+  if (!is.na(available)) detected <- min(detected, available)
   if (!is.na(nproc)) detected <- min(detected, nproc)
   max(1L, as.integer(detected))
 }
@@ -195,10 +207,11 @@ detect_local_cores <- function(prefer_physical = TRUE) {
 
 #' Choose a local global-HAL scheduling plan.
 #'
-#' The default uses serial CV inside each complete HAL fit, lets each run occupy
-#' at most two HAL slots, and admits 20 percent more run contexts than the
-#' minimum needed to feed all global slots. The active-run value is a memory
-#' valve, not another multiplicative CPU layer.
+#' The default uses serial CV inside each complete HAL fit, reserves two
+#' available logical CPU slots, lets each run occupy at most two HAL slots, and
+#' admits 20 percent more run contexts than the minimum needed to feed all
+#' global slots. The active-run value is a memory valve, not another
+#' multiplicative CPU layer.
 #'
 #' @param total_cores Integer local CPU budget.
 #' @param reserve_cores Integer number of cores to leave unused.
@@ -211,7 +224,7 @@ detect_local_cores <- function(prefer_physical = TRUE) {
 #'   per-run and global HAL limits, and the active-run window.
 #' @export
 choose_fitcv_plan <- function(total_cores = detect_local_cores(),
-                              reserve_cores = 1L,
+                              reserve_cores = 2L,
                               n_fit_jobs = 4L,
                               cv_folds = REFERENCE_DEFAULT_CV_FOLDS,
                               n_runs = 1L,
@@ -219,7 +232,7 @@ choose_fitcv_plan <- function(total_cores = detect_local_cores(),
   total_cores <- suppressWarnings(as.integer(total_cores))
   if (is.na(total_cores) || total_cores < 1L) total_cores <- detect_local_cores()
   reserve_cores <- suppressWarnings(as.integer(reserve_cores))
-  if (is.na(reserve_cores) || reserve_cores < 0L) reserve_cores <- 1L
+  if (is.na(reserve_cores) || reserve_cores < 0L) reserve_cores <- 2L
   n_fit_jobs <- suppressWarnings(as.integer(n_fit_jobs))
   if (is.na(n_fit_jobs) || n_fit_jobs < 1L) n_fit_jobs <- 1L
   n_runs <- suppressWarnings(as.integer(n_runs))
@@ -298,7 +311,7 @@ configure_fitcv_parallel <- function(n_fit_jobs = 4L,
   if (cv_folds < 3L) {
     stop("HAL_CV_FOLDS/cv_folds must be at least 3.", call. = FALSE)
   }
-  reserve_cores <- read_nonnegative_int_env("HAL_RESERVE_CORES", 1L)
+  reserve_cores <- read_nonnegative_int_env("HAL_RESERVE_CORES", 2L)
   active_mc_headroom <- read_positive_numeric_env(
     "HAL_ACTIVE_MC_HEADROOM",
     default_active_mc_headroom

@@ -141,6 +141,8 @@ auxiliary <- cars[c("wt", "hp")]
 # Reduced HAL settings keep the help-page example quick.
 example_control <- popart_control(
   n_lambda_values = 5L,
+  n_fit_workers = 1L,
+  n_cv_workers = 1L,
   max_degree = 1L,
   num_knots = 1L,
   random_seed = 20260806L

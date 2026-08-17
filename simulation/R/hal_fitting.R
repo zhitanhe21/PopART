@@ -86,7 +86,7 @@ fit_hal_timed <- function(label, X, Y, weights = NULL, family = "binomial",
                           smoothness_orders = 1, max_degree = 2,
                           num_knots = REFERENCE_DEFAULT_NUM_KNOTS, foldid = NULL,
                           cv_folds = REFERENCE_DEFAULT_CV_FOLDS, cv_nlambda = 50,
-                          cv_workers = 4, cv_cluster = NULL,
+                          cv_workers = 1, cv_cluster = NULL,
                           cache_file = NULL, cache_key = NULL,
                           use_cache = TRUE) {
   set_single_threaded_math()
@@ -167,6 +167,7 @@ fit_hal_timed <- function(label, X, Y, weights = NULL, family = "binomial",
     smoothness_orders = smoothness_orders,
     max_degree = max_degree,
     num_knots = num_knots,
+    return_lasso = FALSE,
     fit_control = list(
       cv_select = TRUE,
       use_min = TRUE,

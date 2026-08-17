@@ -36,7 +36,8 @@
       ),
       n_cv_folds = control$n_cv_folds,
       n_lambda_values = control$n_lambda_values,
-      n_cv_workers = control$n_cv_workers
+      n_cv_workers = control$n_cv_workers,
+      return_lasso = isTRUE(control$keep_nuisance_fits)
     )
   }
 

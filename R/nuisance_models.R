@@ -154,6 +154,7 @@
     smoothness_orders = spec$smoothness_orders,
     max_degree = spec$max_degree,
     num_knots = spec$num_knots,
+    return_lasso = isTRUE(spec$return_lasso),
     fit_control = list(
       cv_select = TRUE,
       use_min = TRUE,

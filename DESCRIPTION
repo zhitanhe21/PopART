@@ -21,8 +21,9 @@ Depends:
 Imports:
     doParallel,
     foreach,
-    hal9001,
+    hal9001 (>= 0.4.6),
     parallel,
+    parallelly,
     stats,
     utils
 Suggests:

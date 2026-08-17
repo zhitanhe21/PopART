@@ -163,23 +163,41 @@ truncate predictions or silently change the estimator.
 
 # Computational controls
 
-The default is serial execution. On a computer with spare capacity, use one
-parallel level at a time:
+The default detects the CPU slots available to R and uses a conservative number
+of complete-fit workers:
 
 ```{r parallel-controls}
+automatic <- popart_control()
+
 # Run up to two complete nuisance fits concurrently.
 fit_parallel <- popart_control(n_fit_workers = 2L, n_cv_workers = 1L)
 
 # Or parallelize three CV folds while complete fits remain serial.
 cv_parallel <- popart_control(n_fit_workers = 1L, n_cv_workers = 3L)
 
+automatic
 fit_parallel
 cv_parallel
 ```
 
-Creating these control objects does not start workers. Workers are started only
-when a control object is passed to `fit_popart()`. Begin conservatively on a
-laptop because worker processes share memory and operating-system resources.
+`n_fit_workers` controls how many of the four complete nuisance fits may run at
+once. Automatic mode uses
+`max(1, min(4, available_cpu_slots - 2))`. `n_cv_workers` controls workers
+for the folds inside a single HAL fit and defaults to one. If CV parallelism is
+requested while fit workers are automatic, complete fits are run serially.
+
+Creating a control object does not start workers. Workers are started only when
+the object is passed to `fit_popart()`. A worker is an operating-system process
+scheduled over available logical CPU slots, not a guaranteed dedicated physical
+core. Use only one parallel level at a time because worker processes also share
+memory and other system resources.
+
+With the default `keep_nuisance_fits = FALSE`, HAL still performs the same CV
+and selects the same model, but the completed fit does not retain its large
+`cv.glmnet` object. This reduces result size and worker-transfer overhead; it
+does not remove the underlying `glmnet` calculations or reduce peak memory while
+an individual fit is running. Set `keep_nuisance_fits = TRUE` only when the
+complete fitted nuisance models are needed for later inspection.
 
 # Frequently asked questions
 

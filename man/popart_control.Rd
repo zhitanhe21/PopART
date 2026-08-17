@@ -8,7 +8,7 @@ popart_control(
   n_cv_folds = 3L,
   n_lambda_values = 50L,
   n_cv_workers = 1L,
-  n_fit_workers = 1L,
+  n_fit_workers = "auto",
   parallel_backend = c("auto", "fork", "psock"),
   random_seed = 1L,
   smoothness_orders = 1L,
@@ -30,11 +30,14 @@ penalty values evaluated within each HAL fit. Default: \code{50L}.}
 
 \item{n_cv_workers}{A single positive integer, no greater than \code{n_cv_folds},
 giving the number of R workers used across cross-validation folds. It must
-equal one when \code{n_fit_workers > 1}. Default: \code{1L}.}
+equal one when a manually specified \code{n_fit_workers} is greater than one.
+Default: \code{1L}.}
 
-\item{n_fit_workers}{A single integer from 1 through 4 giving the maximum
-number of complete nuisance fits run concurrently. It must equal one when
-\code{n_cv_workers > 1}. Default: \code{1L}.}
+\item{n_fit_workers}{Either \code{"auto"} or a single integer from 1 through 4
+giving the maximum number of complete nuisance fits run concurrently.
+Automatic mode uses the conservative CPU-based rule described above and
+resolves to one when \code{n_cv_workers > 1}. A manually specified value greater
+than one cannot be combined with \code{n_cv_workers > 1}. Default: \code{"auto"}.}
 
 \item{parallel_backend}{A character string selecting the complete-fit
 parallel backend: \code{"auto"}, \code{"fork"}, or \code{"psock"}. The fork backend is
@@ -63,8 +66,13 @@ the confidence level for Wald intervals. Default: \code{0.95}.}
 auxiliary weights are divided by their mean before fitting. Default: \code{TRUE}.}
 
 \item{keep_nuisance_fits}{A single logical value indicating whether the four
-fitted HAL objects are retained in the returned \code{popart_fit} object.
-Default: \code{FALSE}.}
+fitted HAL objects, including their underlying \code{cv.glmnet} fits, are
+retained in the returned \code{popart_fit} object. When \code{FALSE}, HAL still runs
+the same cross-validation and produces the same predictions, but its
+unneeded \code{cv.glmnet} object is discarded to reduce memory use and worker
+transfer overhead. This does not skip \code{glmnet} computation or reduce the
+peak memory used while an individual model is being fitted. Default:
+\code{FALSE}.}
 
 \item{positivity_threshold}{A single numeric value strictly between zero and
 \code{0.5}. Estimated probabilities closer than this value to a boundary are
@@ -75,7 +83,12 @@ An object of class \code{popart_control}, implemented as a list with the
 following elements:
 \itemize{
 \item \code{n_cv_folds}, \code{n_lambda_values}, \code{n_cv_workers}, and \code{n_fit_workers}:
-validated integer fitting and worker counts.
+validated integer fitting and resolved worker counts.
+\item \code{n_fit_workers_auto}: whether the complete-fit worker count was
+selected automatically.
+\item \code{detected_cpu_slots}: the positive number of logical CPU slots or
+scheduler-limited slots reported as available when the control object was
+created.
 \item \code{parallel_backend}: the requested backend string; \code{"auto"} is
 resolved when fitting begins.
 \item \code{random_seed}: the validated integer cross-validation seed.
@@ -99,8 +112,15 @@ Parallelism is available at one level at a time. Set \code{n_fit_workers > 1} to
 run complete nuisance fits concurrently, or set \code{n_cv_workers > 1} to run
 folds concurrently while the four nuisance fits are serial. A worker is an R
 process scheduled by the operating system; it is not a promise of a dedicated
-physical CPU core. The default uses one worker at both levels and is suitable
-for portable, reproducible examples.
+physical CPU core.
+
+By default, \code{n_fit_workers = "auto"} queries the CPU slots available to the R
+process with \code{\link[parallelly:availableCores]{parallelly::availableCores()}}. The resolved value is
+\code{max(1, min(4, available_cpu_slots - 2))}. This leaves at least two detected
+CPU slots outside the complete-fit pool when possible and caps the result at four
+because one PopART analysis has four nuisance fits.
+If \code{n_cv_workers > 1}, automatic fit-level parallelism resolves to one so
+that only the CV folds run concurrently.
 
 \code{parallel_backend = "auto"} selects PSOCK on Windows and forked processes on
 other supported operating systems. The HAL basis arguments are passed to
@@ -109,12 +129,15 @@ weights relative to unit-weighted trial records and records the scale factor
 in the fitted object's diagnostics.
 }
 \examples{
-# Portable serial settings used by default.
-control <- popart_control()
-control
+# The default selects a conservative complete-fit worker count automatically.
+automatic <- popart_control()
+automatic
+
+# Request fully serial execution explicitly.
+serial <- popart_control(n_fit_workers = 1L, n_cv_workers = 1L)
 
 # Use three workers for cross-validation folds.
-cv_parallel <- popart_control(n_cv_workers = 3L)
+cv_parallel <- popart_control(n_fit_workers = 1L, n_cv_workers = 3L)
 
 # Or run two of the four complete nuisance fits concurrently.
 fit_parallel <- popart_control(n_fit_workers = 2L, n_cv_workers = 1L)

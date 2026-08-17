@@ -1,52 +1,29 @@
 # popart
 
-**Population-augmented analysis of randomized trials with differential
-nonresponse**
+`popart` is an R package for analyzing a randomized-trial data frame together
+with an auxiliary data frame. The installed package provides a small analysis
+API; data generation, Monte Carlo experiments, and the global scheduler remain
+in the repository-only [`simulation/`](simulation/) directory.
 
-`popart` combines a two-arm randomized-trial sample with an auxiliary
-covariate sample from the target population. It implements the augmented
-inverse probability weighting (AIPW) structure described by Richardson,
-Shook-Sa, and Hudgens using highly adaptive lasso (HAL) nuisance regressions.
-
-The package estimates the population-average risks
-$\eta(0) = E\{Y(0)\}$ and $\eta(1) = E\{Y(1)\}$, their risk difference and risk
-ratio, and corresponding standard errors, covariance matrices, Wald confidence
-intervals, and diagnostics.
-
-## Method
+## Package workflow
 
 ```mermaid
 flowchart LR
-    TRIAL["Trial data<br/>treatment, response, censoring,<br/>outcome, covariates"]
-    AUX["Auxiliary target sample<br/>covariates + optional weights"]
-    OUT["Outcome HAL"]
-    CEN["Censoring HAL"]
-    SEL["Arm-specific selection HAL × 2"]
-    ONLY["Trial-only AIPW<br/>comparator"]
-    AUG["Trial + auxiliary AIPW<br/>population-adjusted analysis"]
-    RESULT["η(0), η(1), RD, RR<br/>SE, covariance, Wald CI"]
-
-    TRIAL --> OUT
-    TRIAL --> CEN
-    TRIAL --> SEL
-    AUX --> SEL
-    OUT --> ONLY
-    CEN --> ONLY
-    OUT --> AUG
-    SEL --> AUG
-    AUX --> AUG
-    ONLY --> RESULT
-    AUG --> RESULT
+    DATA["Import trial and auxiliary data"] --> FIT["fit_popart()"]
+    CONTROL["popart_control()"] --> FIT
+    FIT --> OBJECT["popart_fit object"]
+    OBJECT --> RESULTS["summary(), coef(),<br/>vcov(), confint()"]
+    OBJECT --> DIAG["timing and diagnostics"]
 ```
 
-Both analyses use the same outcome regression. Their difference is the target
-population used for standardization and the way incomplete observation is
-handled:
+## Main functions
 
-| Returned estimator | Information used | Role |
-|---|---|---|
-| `trial_only` | Responding trial sample; treatment randomization and censoring adjustment | Comparator that does not correct the target-population shift caused by differential response |
-| `trial_auxiliary` | Observed trial outcomes plus the auxiliary covariate distribution and arm-specific selection odds | Population-augmented analysis that adjusts for differential nonresponse and censoring under the identifying assumptions |
+| Function | Purpose |
+|---|---|
+| `fit_popart()` | Fit the trial-only and trial-plus-auxiliary analyses |
+| `popart_control()` | Set HAL tuning, random seeds, worker counts, and memory options |
+| `summary()`, `coef()`, `vcov()`, `confint()` | Inspect estimates and uncertainty |
+| `as.data.frame()` | Return the complete results table |
 
 ## Installation
 
@@ -56,14 +33,13 @@ From a cloned source checkout, run this in R from the repository root:
 install.packages(".", repos = NULL, type = "source")
 ```
 
-`popart` requires R 4.1 or later. Its package dependencies, including
-[`hal9001`](https://github.com/tlverse/hal9001), are listed in
+`popart` requires R 4.1 or later. Package dependencies are listed in
 [`DESCRIPTION`](DESCRIPTION).
 
 ## Quick start
 
 The repository includes fixed synthetic CSV files for this example. They are
-teaching fixtures and are not installed as package data.
+not installed as package data.
 
 ```r
 library(popart)
@@ -93,46 +69,39 @@ coef(fit, estimator = "trial_auxiliary")
 confint(fit, estimator = "trial_auxiliary")
 ```
 
-For an applied analysis, first import a CSV, database table, or another data
-source as a data frame, then use the same interface. `fit_popart()` does not
-read file paths or generate data.
+For an applied analysis, import the two data frames from a CSV, database, or
+another source and replace the example column names. `fit_popart()` accepts
+data frames rather than file paths.
 
-## Data and results
+## Inputs
 
-| Data frame | Required content |
+| Input | Required columns |
 |---|---|
-| `trial_data` | Binary outcome, treatment, response indicator, censoring indicator, and baseline covariates |
-| `auxiliary_data` | The same baseline covariates and, optionally, a nonnegative sampling-weight column; no treatment or outcome data are required |
+| `trial_data` | Outcome, two-level treatment, response indicator, censoring indicator, and baseline covariates |
+| `auxiliary_data` | The same baseline covariates and an optional nonnegative sampling-weight column |
 
-Response uses 1 for responded and censoring uses 1 for censored. The outcome
-may be missing only when it is unobserved; censoring may be missing for
-nonresponders. Covariates must be numeric or logical, finite, nonmissing, and
-present in both data frames. Encode categorical variables before fitting.
+Outcome, response, and censoring variables must be binary. Response uses 1 for
+responded and censoring uses 1 for censored. The outcome may be missing only
+when it is unobserved, and censoring may be missing for nonresponders.
+Covariates must be numeric or logical, finite, nonmissing, and present in both
+data frames.
 
-The returned `popart_fit` object contains four parameters for each estimator:
+## Outputs
 
-| Parameter | Definition |
+Every `popart_fit` object contains results labeled `trial_only` and
+`trial_auxiliary`. Each label includes the control-arm mean, treated-arm mean,
+risk difference, and risk ratio.
+
+| Object component | Contents |
 |---|---|
-| `mean_control` | $\eta(0)$ |
-| `mean_treated` | $\eta(1)$ |
-| `risk_difference` | $\eta(1) - \eta(0)$ |
-| `risk_ratio` | $\eta(1) / \eta(0)$ |
+| `estimates` | Point estimates, standard errors, and confidence limits |
+| `variance`, `covariance`, `full_covariance` | Variance and covariance results |
+| `fit_diagnostics` | HAL fit sizes, timings, selected lambdas, and worker process IDs |
+| `diagnostics` | Sample sizes, prediction ranges, weight scaling, and messages |
+| `nuisance_fits` | Fitted HAL objects when explicitly retained; otherwise `NULL` |
+| `control`, `columns`, `call` | Reproducibility information for the analysis |
 
-Standard R methods are available: `print()`, `summary()`, `coef()`, `vcov()`,
-`confint()`, `nobs()`, and `as.data.frame()`.
-
-## Computation
-
-`popart_control()` manages HAL tuning, reproducibility, memory, and one level
-of parallelism at a time.
-
-| Control | Default | Meaning |
-|---|---|---|
-| `n_fit_workers` | `"auto"` | Run up to `max(1, min(4, available_cpu_slots - 2))` complete HAL fits concurrently |
-| `n_cv_workers` | `1L` | Workers used across CV folds inside one HAL fit |
-| `n_cv_folds` | `3L` | Cross-validation folds per HAL fit |
-| `num_knots` | `c(5L, 3L)` | HAL knot counts |
-| `keep_nuisance_fits` | `FALSE` | Return estimates and diagnostics without retaining large completed `cv.glmnet` objects |
+## Computation controls
 
 ```r
 # CPU-aware default
@@ -142,54 +111,87 @@ control <- popart_control()
 serial_control <- popart_control(n_fit_workers = 1L, n_cv_workers = 1L)
 ```
 
-Workers are R processes scheduled over the logical CPU slots available to R;
-they are not guaranteed dedicated physical cores. If CV parallelism is set
-above one while fit workers remain automatic, complete fits become serial to
-avoid nested parallelism.
+| Control | Default | Meaning |
+|---|---|---|
+| `n_fit_workers` | `"auto"` | Complete HAL fits that may run concurrently; automatic mode uses `max(1, min(4, available_cpu_slots - 2))` |
+| `n_cv_workers` | `1L` | Workers used across CV folds inside one HAL fit |
+| `n_cv_folds` | `3L` | Cross-validation folds per HAL fit |
+| `n_lambda_values` | `50L` | Lasso penalty values per HAL fit |
+| `num_knots` | `c(5L, 3L)` | HAL knot counts |
+| `keep_nuisance_fits` | `FALSE` | Do not retain completed `cv.glmnet` objects unless requested |
 
-## Scope and assumptions
+Workers are R processes scheduled over the logical CPU slots available to R.
+Only one parallel level is used at a time: either complete fits or the CV folds
+inside a fit.
 
-The analysis requires a well-defined randomized treatment, treatment and
-uncensored-response positivity, conditional exchangeability of response and
-censoring given treatment and baseline covariates, and trial and auxiliary
-samples that correspond to the same target population (with appropriate
-auxiliary weights when needed).
+## Simulation
 
-The motivating manuscript studies cluster-randomized trials. The current API
-has no cluster identifier and does not provide cluster-robust inference; shared
-cluster-level covariates can be supplied as baseline covariates repeated on
-individual rows. The current package implements the AIPW analyses above, not
-the manuscript's separate g-formula or IPW estimators, and does not return an
-odds ratio.
+The [`simulation/`](simulation/) directory is excluded from the installed
+package. It provides the research and teaching workflow used to generate data,
+run Monte Carlo experiments, save progress, and create reports.
 
-HAL is an implementation choice in this package. The manuscript is an
-unpublished draft and should not be read as establishing semiparametric
-efficiency or unrestricted double-robust theory for this particular HAL
-implementation.
+| Location | Contents |
+|---|---|
+| `simulation/R/` | Data generation, reference analysis, global scheduling, persistence, and reporting functions |
+| `simulation/data/` | Fixed synthetic CSV files used by the quick start |
+| `simulation/scripts/` | Command-line entry points for running and analyzing simulations |
+| `simulation/tests/` | Formal-package versus reference-code equivalence check |
+| `simulation/results/` | Ignored local caches, checkpoints, result tables, reports, and figures |
 
-## Documentation and reproducibility
+### Scheduler workflow
 
-- Start with the [getting-started vignette](vignettes/getting-started.Rmd), or
-  run `vignette("getting-started", package = "popart")` after installation.
-- See the [`fit_popart()`](man/fit_popart.Rd) and
-  [`popart_control()`](man/popart_control.Rd) reference pages for the complete
-  interface.
-- Repository-only data generation, Monte Carlo experiments, checkpoints,
-  reporting, and the cross-replicate global HAL scheduler live in
-  [`simulation/`](simulation/). They are excluded from the installed package.
+```mermaid
+flowchart LR
+    GRID["Sample-size grid and MC seeds"] --> ACTIVE["Active MC runs"]
+    ACTIVE --> QUEUE["Global queue of HAL fits"]
+    QUEUE --> SLOTS["Available logical CPU slots"]
+    SLOTS --> EST["Completed run estimates"]
+    EST --> SAVE["Atomic checkpoints and result files"]
+    SAVE --> REPORT["Tables, report, and figures"]
+```
+
+The scheduler uses one global HAL-fit limit across active replicates and sample
+size combinations. When a slot becomes free, it receives the next ready fit.
+By default, two detected logical CPU slots are reserved for the operating
+system, each HAL fit uses one CV worker, and cached or checkpointed work can be
+reused after an interrupted run.
+
+### Run a Monte Carlo study
+
+Run these commands from the repository root:
+
+```sh
+# Inspect the planned resource allocation without fitting models.
+Rscript simulation/scripts/run_monte_carlo.R --n-trial 200,500 --n-auxiliary 200,500 --replicates 20 --dry-run
+
+# Run the study and write results, a report, and figures.
+Rscript simulation/scripts/run_monte_carlo.R --n-trial 200,500 --n-auxiliary 200,500 --replicates 20 --run-id local_mc20
+
+# Recreate the report and figures from saved results.
+Rscript simulation/scripts/analyze_results.R --run-id local_mc20
+
+# Compare the installed API with the preserved reference implementation.
+Rscript simulation/tests/formal_api_equivalence.R
+```
+
+Use `--help` to list all Monte Carlo options, including explicit CPU limits,
+CV settings, cache locations, resume behavior, and output directories.
+
+## Documentation
+
+- Open the installed tutorial with
+  `vignette("getting-started", package = "popart")`.
+- Read the source version at
+  [`vignettes/getting-started.Rmd`](vignettes/getting-started.Rmd).
+- See [`man/fit_popart.Rd`](man/fit_popart.Rd) and
+  [`man/popart_control.Rd`](man/popart_control.Rd) for the complete API.
 
 ## References
 
-- Richardson, B. D., Shook-Sa, B. E., and Hudgens, M. G. (n.d.). *Causal
-  Inference from Cluster-Randomized Trials with Differential Nonresponse*.
-  Unpublished manuscript submitted to *Biometrics*.
-- Hejazi, N. S., Coyle, J. R., and van der Laan, M. J. (2020). `hal9001`:
-  Scalable highly adaptive lasso regression in R. *Journal of Open Source
-  Software*, 5(53), 2526.
-  [doi:10.21105/joss.02526](https://doi.org/10.21105/joss.02526).
+<!-- References will be added after publication. -->
 
 ## License
 
 The current [`LICENSE`](LICENSE) is a source-availability notice, not a public
-redistribution license. Confirm the upstream research-code terms and replace
-the notice with a compatible license before public release or redistribution.
+redistribution license. Confirm the upstream research-code terms before public
+release or redistribution.

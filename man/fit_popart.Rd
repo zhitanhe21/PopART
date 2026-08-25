@@ -69,17 +69,20 @@ following elements:
 control and treated arm means, one matrix per estimator.
 \item \code{full_covariance}: a named list of four-by-four covariance matrices
 for the arm means, risk difference, and risk ratio, one per estimator.
-\item \code{fit_diagnostics}: a data frame with columns \code{fit}, \code{observations},
-\code{predictors}, \code{response_mean}, \code{weight_sum}, \code{elapsed_seconds},
+\item \code{fit_diagnostics}: a data frame with columns \code{outer_fold}, \code{fit},
+\code{observations}, \code{predictors}, \code{response_mean}, \code{weight_sum},
+\code{elapsed_seconds},
 \code{basis_seconds}, \code{design_matrix_seconds}, \code{lasso_seconds},
 \code{selected_lambda}, \code{n_cv_folds}, \code{n_lambda_values}, \code{n_cv_workers},
 \code{process_id}, \code{started_at}, and \code{finished_at}.
-\item \code{diagnostics}: a list containing \code{sample_sizes}, the auxiliary-weight
-normalization scale (\code{auxiliary_weight_scale}), nuisance-prediction ranges
+\item \code{diagnostics}: a list containing \code{sample_sizes}, outer-fold sizes
+(\code{outer_fold_sizes}), the auxiliary-weight normalization scale
+(\code{auxiliary_weight_scale}), nuisance-prediction ranges
 (\code{prediction_ranges}), and diagnostic \code{messages}.
-\item \code{nuisance_fits}: a list named \code{selection_control},
-\code{selection_treated}, \code{outcome}, and \code{censoring} containing fitted HAL
-objects when \code{control$keep_nuisance_fits} is \code{TRUE}; otherwise \code{NULL}.
+\item \code{nuisance_fits}: a list with one element per outer fold. Each fold
+contains \code{selection_control}, \code{selection_treated}, \code{outcome}, and
+\code{censoring} HAL objects when \code{control$keep_nuisance_fits} is \code{TRUE};
+otherwise \code{NULL}.
 \item \code{columns}: a list with elements \code{outcome}, \code{treatment}, \code{response},
 \code{censoring}, \code{covariates}, \code{auxiliary_weight}, and \code{treatment_values},
 recording the input-column specification used for the analysis.
@@ -93,10 +96,14 @@ randomized-trial sample and an auxiliary sample from the target population.
 Both a trial-only estimator and a trial-and-auxiliary estimator are returned.
 }
 \details{
-Four highly adaptive lasso (HAL) nuisance models are fitted: one outcome
-regression, one censoring regression, and arm-specific trial-selection
-regressions. The outcome regression is shared by the two estimators. The
-function analyzes data supplied by the user; it does not generate data or
+Within every outer cross-fitting fold, four highly adaptive lasso (HAL)
+nuisance models are fitted: one outcome regression, one censoring regression,
+and arm-specific trial-selection regressions. The models are trained on the
+complementary folds and predict the held-out fold. Held-out predictions are
+pooled before the two AIPW estimators are computed. Set
+\code{control$crossfit_folds = 1L} to recover full-sample nuisance fitting without
+outer cross-fitting. The outcome regression is shared by the two estimators.
+The function analyzes data supplied by the user; it does not generate data or
 run Monte Carlo simulations.
 
 The trial-and-auxiliary AIPW framework follows Richardson, Shook-Sa, and

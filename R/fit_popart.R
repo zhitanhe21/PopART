@@ -9,10 +9,14 @@
 #' randomized-trial sample and an auxiliary sample from the target population.
 #' Both a trial-only estimator and a trial-and-auxiliary estimator are returned.
 #'
-#' Four highly adaptive lasso (HAL) nuisance models are fitted: one outcome
-#' regression, one censoring regression, and arm-specific trial-selection
-#' regressions. The outcome regression is shared by the two estimators. The
-#' function analyzes data supplied by the user; it does not generate data or
+#' Within every outer cross-fitting fold, four highly adaptive lasso (HAL)
+#' nuisance models are fitted: one outcome regression, one censoring regression,
+#' and arm-specific trial-selection regressions. The models are trained on the
+#' complementary folds and predict the held-out fold. Held-out predictions are
+#' pooled before the two AIPW estimators are computed. Set
+#' `control$crossfit_folds = 1L` to recover full-sample nuisance fitting without
+#' outer cross-fitting. The outcome regression is shared by the two estimators.
+#' The function analyzes data supplied by the user; it does not generate data or
 #' run Monte Carlo simulations.
 #'
 #' The trial-and-auxiliary AIPW framework follows Richardson, Shook-Sa, and
@@ -72,17 +76,20 @@
 #'     control and treated arm means, one matrix per estimator.
 #'   \item `full_covariance`: a named list of four-by-four covariance matrices
 #'     for the arm means, risk difference, and risk ratio, one per estimator.
-#'   \item `fit_diagnostics`: a data frame with columns `fit`, `observations`,
-#'     `predictors`, `response_mean`, `weight_sum`, `elapsed_seconds`,
+#'   \item `fit_diagnostics`: a data frame with columns `outer_fold`, `fit`,
+#'     `observations`, `predictors`, `response_mean`, `weight_sum`,
+#'     `elapsed_seconds`,
 #'     `basis_seconds`, `design_matrix_seconds`, `lasso_seconds`,
 #'     `selected_lambda`, `n_cv_folds`, `n_lambda_values`, `n_cv_workers`,
 #'     `process_id`, `started_at`, and `finished_at`.
-#'   \item `diagnostics`: a list containing `sample_sizes`, the auxiliary-weight
-#'     normalization scale (`auxiliary_weight_scale`), nuisance-prediction ranges
+#'   \item `diagnostics`: a list containing `sample_sizes`, outer-fold sizes
+#'     (`outer_fold_sizes`), the auxiliary-weight normalization scale
+#'     (`auxiliary_weight_scale`), nuisance-prediction ranges
 #'     (`prediction_ranges`), and diagnostic `messages`.
-#'   \item `nuisance_fits`: a list named `selection_control`,
-#'     `selection_treated`, `outcome`, and `censoring` containing fitted HAL
-#'     objects when `control$keep_nuisance_fits` is `TRUE`; otherwise `NULL`.
+#'   \item `nuisance_fits`: a list with one element per outer fold. Each fold
+#'     contains `selection_control`, `selection_treated`, `outcome`, and
+#'     `censoring` HAL objects when `control$keep_nuisance_fits` is `TRUE`;
+#'     otherwise `NULL`.
 #'   \item `columns`: a list with elements `outcome`, `treatment`, `response`,
 #'     `censoring`, `covariates`, `auxiliary_weight`, and `treatment_values`,
 #'     recording the input-column specification used for the analysis.
@@ -172,25 +179,38 @@ fit_popart <- function(
     control = control
   )
 
-  jobs <- .make_popart_nuisance_jobs(
+  outer_fold_ids <- .make_popart_crossfit_folds(
+    data = input$data,
+    n_folds = control$crossfit_folds,
+    seed = control$random_seed
+  )
+  jobs <- .make_popart_crossfit_jobs(
     data = input$data,
     covariates = input$covariates,
-    control = control
+    control = control,
+    fold_ids = outer_fold_ids
   )
   fit_outputs <- .fit_popart_nuisance_models(jobs, control)
-  nuisance_fits <- lapply(fit_outputs, `[[`, "fit")
+  nuisance_fits <- .organize_popart_crossfit_fits(
+    fit_outputs,
+    control$crossfit_folds
+  )
+  nuisance_predictions <- .predict_popart_crossfit(
+    data = input$data,
+    covariates = input$covariates,
+    fits_by_fold = nuisance_fits,
+    fold_ids = outer_fold_ids
+  )
 
   estimator_results <- list(
     trial_only = .compute_trial_only_popart(
       data = input$data,
-      fits = nuisance_fits,
-      covariates = input$covariates,
+      predictions = nuisance_predictions,
       treatment_probability = control$treatment_probability
     ),
     trial_auxiliary = .compute_trial_auxiliary_popart(
       data = input$data,
-      fits = nuisance_fits,
-      covariates = input$covariates
+      predictions = nuisance_predictions
     )
   )
   tables <- .popart_parameter_tables(
@@ -227,6 +247,10 @@ fit_popart <- function(
       fit_diagnostics = fit_diagnostics,
       diagnostics = list(
         sample_sizes = input$sample_sizes,
+        outer_fold_sizes = stats::setNames(
+          tabulate(outer_fold_ids, nbins = control$crossfit_folds),
+          sprintf("fold_%03d", seq_len(control$crossfit_folds))
+        ),
         auxiliary_weight_scale = input$weight_scale,
         prediction_ranges = prediction_diagnostics,
         messages = diagnostic_messages

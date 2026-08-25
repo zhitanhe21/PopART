@@ -41,6 +41,7 @@ expect_error(auto_fit_workers(1.5), "positive integer")
 control <- popart_control()
 stopifnot(
   inherits(control, "popart_control"),
+  identical(control$crossfit_folds, 3L),
   identical(control$n_cv_folds, 3L),
   identical(control$num_knots, c(5L, 3L)),
   identical(control$n_fit_workers, auto_fit_workers(available_cpu_slots)),
@@ -60,6 +61,8 @@ expect_error(
   "not both"
 )
 expect_error(popart_control(n_cv_folds = 2L), "n_cv_folds")
+expect_error(popart_control(crossfit_folds = 0L), "crossfit_folds")
+expect_error(popart_control(crossfit_folds = 101L), "crossfit_folds")
 expect_error(popart_control(n_fit_workers = "fast"), "auto")
 
 base_cars <- datasets::mtcars
@@ -129,6 +132,99 @@ stopifnot(
     identical(sort(unique(job$fold_ids)), seq_len(control$n_cv_folds))
   }, logical(1))),
   all(!vapply(jobs, `[[`, logical(1), "return_lasso"))
+)
+
+make_outer_folds <- getFromNamespace(
+  ".make_popart_crossfit_folds",
+  "popart"
+)
+outer_folds <- make_outer_folds(
+  prepared$data,
+  control$crossfit_folds,
+  control$random_seed
+)
+outer_folds_again <- make_outer_folds(
+  prepared$data,
+  control$crossfit_folds,
+  control$random_seed
+)
+stopifnot(
+  identical(outer_folds, outer_folds_again),
+  identical(sort(unique(outer_folds)), seq_len(control$crossfit_folds)),
+  identical(
+    make_outer_folds(prepared$data, 1L, control$random_seed),
+    rep(1L, nrow(prepared$data))
+  )
+)
+
+make_crossfit_jobs <- getFromNamespace(
+  ".make_popart_crossfit_jobs",
+  "popart"
+)
+crossfit_jobs <- make_crossfit_jobs(
+  prepared$data,
+  prepared$covariates,
+  control,
+  outer_folds
+)
+stopifnot(
+  length(crossfit_jobs) == 4L * control$crossfit_folds,
+  identical(
+    sort(unique(vapply(crossfit_jobs, `[[`, integer(1), "outer_fold"))),
+    seq_len(control$crossfit_folds)
+  ),
+  all(grepl("^fold_[0-9]{3}__", names(crossfit_jobs)))
+)
+
+predict.popart_test_model <- function(object, new_data, ...) {
+  value <- if (identical(object$type, "outcome")) {
+    object$value + 0.01 * new_data$A
+  } else {
+    rep(object$value, nrow(new_data))
+  }
+  as.numeric(value)
+}
+fake_fits <- lapply(seq_len(control$crossfit_folds), function(fold) {
+  model <- function(type, value) {
+    structure(list(type = type, value = value), class = "popart_test_model")
+  }
+  list(
+    selection_control = model("selection", 0.10 * fold),
+    selection_treated = model("selection", 0.10 * fold + 0.01),
+    outcome = model("outcome", 0.20 * fold),
+    censoring = model("censoring", 0.05 * fold)
+  )
+})
+predict_crossfit <- getFromNamespace(".predict_popart_crossfit", "popart")
+fake_predictions <- predict_crossfit(
+  prepared$data,
+  prepared$covariates,
+  fake_fits,
+  outer_folds
+)
+required_outcome <- prepared$data$S == 0L | prepared$data$R == 1L
+required_censoring <- prepared$data$S == 1L & prepared$data$R == 1L
+required_selection <- prepared$data$S * prepared$data$R *
+  (1L - prepared$data$C) == 1L
+stopifnot(
+  isTRUE(all.equal(
+    fake_predictions$mu_control[required_outcome],
+    0.20 * outer_folds[required_outcome],
+    tolerance = 0
+  )),
+  isTRUE(all.equal(
+    fake_predictions$mu_treated[required_outcome],
+    0.20 * outer_folds[required_outcome] + 0.01,
+    tolerance = 0
+  )),
+  isTRUE(all.equal(
+    fake_predictions$censor_probability[required_censoring],
+    0.05 * outer_folds[required_censoring],
+    tolerance = 0
+  )),
+  all(is.finite(
+    fake_predictions$selection_probability[required_selection]
+  ))
 )
 
 retained_control <- popart_control(
@@ -225,6 +321,13 @@ if (identical(Sys.getenv("POPART_RUN_INTEGRATION_TESTS"), "true")) {
       "risk_ratio"
     )),
     all(is.finite(fit$estimates$estimate)),
+    nrow(fit$fit_diagnostics) == 4L * arguments$control$crossfit_folds,
+    identical(
+      sort(unique(fit$fit_diagnostics$outer_fold)),
+      seq_len(arguments$control$crossfit_folds)
+    ),
+    sum(fit$diagnostics$outer_fold_sizes) ==
+      nrow(trial) + nrow(auxiliary),
     is.null(fit$nuisance_fits),
     length(coef(fit, estimator = "trial_auxiliary")) == 4L,
     all(dim(vcov(fit, estimator = "trial_auxiliary")) == c(4L, 4L)),

@@ -59,6 +59,9 @@ reference <- suppressWarnings(study$run_reference_replicate(
 ))
 
 formal_control <- popart::popart_control(
+  # The preserved reference estimator uses full-sample nuisance predictions.
+  # Disable the package's default outer cross-fitting for this equivalence test.
+  crossfit_folds = 1L,
   n_cv_folds = 3L,
   n_lambda_values = 3L,
   n_cv_workers = 1L,

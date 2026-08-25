@@ -103,6 +103,7 @@ application-appropriate settings for real data.
 
 ```{r configure-fit}
 teaching_control <- popart_control(
+  crossfit_folds = 3L,
   n_cv_folds = 3L,
   n_lambda_values = 5L,
   n_cv_workers = 1L,
@@ -148,12 +149,13 @@ confint(fit, estimator = "trial_auxiliary")
 round(vcov(fit, estimator = "trial_auxiliary"), 5)
 ```
 
-The fitted object also records sample sizes, nuisance-fit timing,
-fitted-probability ranges, and diagnostic messages.
+The fitted object also records sample sizes, outer-fold sizes, nuisance-fit
+timing, fitted-probability ranges, and diagnostic messages.
 
 ```{r inspect-diagnostics}
 summary(fit)
 fit$fit_diagnostics
+fit$diagnostics$outer_fold_sizes
 fit$diagnostics$prediction_ranges
 fit$diagnostics$messages
 ```
@@ -180,8 +182,14 @@ fit_parallel
 cv_parallel
 ```
 
-`n_fit_workers` controls how many of the four complete nuisance fits may run at
-once. Automatic mode uses
+The default `crossfit_folds = 3L` trains each nuisance model on two outer folds
+and predicts the held-out fold. Set `crossfit_folds = 1L` to disable outer
+cross-fitting. This outer split is separate from `n_cv_folds`, which selects the
+lasso penalty inside each HAL fit.
+
+`n_fit_workers` controls how many complete nuisance fits may run at once. With
+three outer folds and four nuisance-model types, 12 fits enter the shared task
+queue. Automatic mode uses
 `max(1, min(4, available_cpu_slots - 2))`. `n_cv_workers` controls workers
 for the folds inside a single HAL fit and defaults to one. If CV parallelism is
 requested while fit workers are automatic, complete fits are run serially.

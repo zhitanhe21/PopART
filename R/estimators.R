@@ -10,8 +10,12 @@
   censoring = 14390L
 )
 
+.POPART_OUTER_FOLD_SEED_OFFSET <- 5099L
+.POPART_OUTER_CV_SEED_STRIDE <- 719L
 
-.make_popart_nuisance_jobs <- function(data, covariates, control) {
+
+.make_popart_nuisance_jobs <- function(data, covariates, control,
+                                       outer_fold = 1L) {
   data$Q <- data$S * data$R * (1L - data$C)
   outcome_columns <- c("A", covariates)
 
@@ -32,8 +36,10 @@
       fold_ids = .make_cv_fold_ids(
         length(Y),
         control$n_cv_folds,
-        control$random_seed + .POPART_CV_SEED_OFFSETS[[label]]
+        control$random_seed + .POPART_CV_SEED_OFFSETS[[label]] +
+          (outer_fold - 1L) * .POPART_OUTER_CV_SEED_STRIDE
       ),
+      outer_fold = as.integer(outer_fold),
       n_cv_folds = control$n_cv_folds,
       n_lambda_values = control$n_lambda_values,
       n_cv_workers = control$n_cv_workers,
@@ -70,28 +76,213 @@
 }
 
 
-.compute_trial_only_popart <- function(data, fits, covariates,
-                                       treatment_probability) {
-  data <- data[data$S == 1L & data$R == 1L, , drop = FALSE]
+.make_popart_crossfit_folds <- function(data, n_folds, seed) {
+  n_folds <- suppressWarnings(as.integer(n_folds))
+  if (length(n_folds) != 1L || is.na(n_folds) || n_folds < 1L) {
+    stop("n_folds must be a positive integer.", call. = FALSE)
+  }
+  if (n_folds == 1L) {
+    return(rep(1L, nrow(data)))
+  }
+  if (nrow(data) < n_folds) {
+    stop(
+      "crossfit_folds cannot exceed the combined number of observations.",
+      call. = FALSE
+    )
+  }
+
+  previous_seed <- if (exists(
+    ".Random.seed",
+    envir = .GlobalEnv,
+    inherits = FALSE
+  )) {
+    get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  } else {
+    NULL
+  }
+  on.exit({
+    if (is.null(previous_seed)) {
+      if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+        rm(".Random.seed", envir = .GlobalEnv)
+      }
+    } else {
+      assign(".Random.seed", previous_seed, envir = .GlobalEnv)
+    }
+  }, add = TRUE)
+
+  set.seed(seed + .POPART_OUTER_FOLD_SEED_OFFSET)
+  strata <- interaction(
+    data$S,
+    data$A,
+    data$R,
+    data$C,
+    data$Y,
+    drop = TRUE,
+    lex.order = TRUE
+  )
+  fold_ids <- integer(nrow(data))
+  for (indices in split(seq_len(nrow(data)), strata)) {
+    labels <- rep(sample(seq_len(n_folds)), length.out = length(indices))
+    fold_ids[indices] <- labels[sample.int(length(labels))]
+  }
+  if (!identical(sort(unique(fold_ids)), seq_len(n_folds))) {
+    stop(
+      "Unable to place observations in every outer cross-fitting fold.",
+      call. = FALSE
+    )
+  }
+  fold_ids
+}
+
+
+.make_popart_crossfit_jobs <- function(data, covariates, control, fold_ids) {
+  jobs <- list()
+  for (fold in seq_len(control$crossfit_folds)) {
+    training <- if (control$crossfit_folds == 1L) {
+      data
+    } else {
+      data[fold_ids != fold, , drop = FALSE]
+    }
+    tryCatch(
+      .validate_popart_fit_samples(
+        training,
+        covariates,
+        control$n_cv_folds
+      ),
+      error = function(condition) {
+        stop(
+          "Outer cross-fitting fold ", fold,
+          " leaves an invalid nuisance-model training sample. Reduce ",
+          "crossfit_folds or use more data. ",
+          conditionMessage(condition),
+          call. = FALSE
+        )
+      }
+    )
+    fold_jobs <- .make_popart_nuisance_jobs(
+      data = training,
+      covariates = covariates,
+      control = control,
+      outer_fold = fold
+    )
+    names(fold_jobs) <- sprintf(
+      "fold_%03d__%s",
+      fold,
+      names(fold_jobs)
+    )
+    jobs <- c(jobs, fold_jobs)
+  }
+  jobs
+}
+
+
+.organize_popart_crossfit_fits <- function(fit_outputs, n_folds) {
+  organized <- lapply(seq_len(n_folds), function(fold) {
+    in_fold <- vapply(
+      fit_outputs,
+      function(output) identical(unique(output$timing$outer_fold), fold),
+      logical(1)
+    )
+    outputs <- fit_outputs[in_fold]
+    fits <- lapply(outputs, `[[`, "fit")
+    names(fits) <- vapply(
+      outputs,
+      function(output) unique(output$timing$fit),
+      character(1)
+    )
+    fits
+  })
+  names(organized) <- sprintf("fold_%03d", seq_len(n_folds))
+  organized
+}
+
+
+.predict_popart_crossfit <- function(data, covariates, fits_by_fold,
+                                     fold_ids) {
+  n <- nrow(data)
+  predictions <- data.frame(
+    mu_control = rep(NA_real_, n),
+    mu_treated = rep(NA_real_, n),
+    censor_probability = rep(NA_real_, n),
+    selection_probability = rep(NA_real_, n)
+  )
+  data$Q <- data$S * data$R * (1L - data$C)
   outcome_columns <- c("A", covariates)
 
-  new_control <- data[, outcome_columns, drop = FALSE]
-  new_treated <- new_control
-  new_control$A <- 0L
-  new_treated$A <- 1L
+  for (fold in seq_along(fits_by_fold)) {
+    fits <- fits_by_fold[[fold]]
+    test <- fold_ids == fold
 
-  mu_control <- as.numeric(stats::predict(
-    fits$outcome,
-    new_data = new_control
-  ))
-  mu_treated <- as.numeric(stats::predict(
-    fits$outcome,
-    new_data = new_treated
-  ))
-  censor_probability <- as.numeric(stats::predict(
-    fits$censoring,
-    new_data = data[, covariates, drop = FALSE]
-  ))
+    outcome_rows <- test & (data$S == 0L | data$R == 1L)
+    if (any(outcome_rows)) {
+      new_control <- data[outcome_rows, outcome_columns, drop = FALSE]
+      new_treated <- new_control
+      new_control$A <- 0L
+      new_treated$A <- 1L
+      predictions$mu_control[outcome_rows] <- as.numeric(stats::predict(
+        fits$outcome,
+        new_data = new_control
+      ))
+      predictions$mu_treated[outcome_rows] <- as.numeric(stats::predict(
+        fits$outcome,
+        new_data = new_treated
+      ))
+    }
+
+    censor_rows <- test & data$S == 1L & data$R == 1L
+    if (any(censor_rows)) {
+      predictions$censor_probability[censor_rows] <- as.numeric(stats::predict(
+        fits$censoring,
+        new_data = data[censor_rows, covariates, drop = FALSE]
+      ))
+    }
+
+    observed_control <- test & data$Q == 1L & data$A == 0L
+    observed_treated <- test & data$Q == 1L & data$A == 1L
+    if (any(observed_control)) {
+      predictions$selection_probability[observed_control] <- as.numeric(
+        stats::predict(
+          fits$selection_control,
+          new_data = data[observed_control, covariates, drop = FALSE]
+        )
+      )
+    }
+    if (any(observed_treated)) {
+      predictions$selection_probability[observed_treated] <- as.numeric(
+        stats::predict(
+          fits$selection_treated,
+          new_data = data[observed_treated, covariates, drop = FALSE]
+        )
+      )
+    }
+  }
+
+  required_outcome <- data$S == 0L | data$R == 1L
+  required_censoring <- data$S == 1L & data$R == 1L
+  required_selection <- data$Q == 1L
+  if (any(!is.finite(predictions$mu_control[required_outcome])) ||
+      any(!is.finite(predictions$mu_treated[required_outcome])) ||
+      any(!is.finite(predictions$censor_probability[required_censoring])) ||
+      any(!is.finite(
+        predictions$selection_probability[required_selection]
+      ))) {
+    stop(
+      "Outer cross-fitting did not produce every required nuisance prediction.",
+      call. = FALSE
+    )
+  }
+  predictions
+}
+
+
+.compute_trial_only_popart <- function(data, predictions,
+                                       treatment_probability) {
+  rows <- data$S == 1L & data$R == 1L
+  data <- data[rows, , drop = FALSE]
+  predictions <- predictions[rows, , drop = FALSE]
+  mu_control <- predictions$mu_control
+  mu_treated <- predictions$mu_treated
+  censor_probability <- predictions$censor_probability
   censor_survival <- 1 - censor_probability
   treatment_probability_observed <- ifelse(
     data$A == 1L,
@@ -144,38 +335,15 @@
 }
 
 
-.compute_trial_auxiliary_popart <- function(data, fits, covariates) {
+.compute_trial_auxiliary_popart <- function(data, predictions) {
   data$Q <- data$S * data$R * (1L - data$C)
-  outcome_columns <- c("A", covariates)
-  predict_outcome <- data$S == 0L | data$R == 1L
-
-  new_control <- data[predict_outcome, outcome_columns, drop = FALSE]
-  new_treated <- new_control
-  new_control$A <- 0L
-  new_treated$A <- 1L
-  mu_control <- rep(NA_real_, nrow(data))
-  mu_treated <- rep(NA_real_, nrow(data))
-  mu_control[predict_outcome] <- as.numeric(stats::predict(
-    fits$outcome,
-    new_data = new_control
-  ))
-  mu_treated[predict_outcome] <- as.numeric(stats::predict(
-    fits$outcome,
-    new_data = new_treated
-  ))
+  mu_control <- predictions$mu_control
+  mu_treated <- predictions$mu_treated
 
   observed <- data$Q == 1L
   observed_control <- observed & data$A == 0L
   observed_treated <- observed & data$A == 1L
-  selection_probability <- rep(NA_real_, nrow(data))
-  selection_probability[observed_control] <- as.numeric(stats::predict(
-    fits$selection_control,
-    new_data = data[observed_control, covariates, drop = FALSE]
-  ))
-  selection_probability[observed_treated] <- as.numeric(stats::predict(
-    fits$selection_treated,
-    new_data = data[observed_treated, covariates, drop = FALSE]
-  ))
+  selection_probability <- predictions$selection_probability
   observed_selection_probability <- selection_probability[observed]
   if (any(!is.finite(observed_selection_probability)) ||
       any(observed_selection_probability <= 0) ||

@@ -5,6 +5,7 @@
 \title{Configure PopART estimation}
 \usage{
 popart_control(
+  crossfit_folds = 3L,
   n_cv_folds = 3L,
   n_lambda_values = 50L,
   n_cv_workers = 1L,
@@ -22,6 +23,11 @@ popart_control(
 )
 }
 \arguments{
+\item{crossfit_folds}{A positive integer giving the number of outer
+cross-fitting folds. The default, \code{3L}, enables three-fold cross-fitting.
+Set this to \code{1L} to disable outer cross-fitting and use full-sample
+nuisance predictions.}
+
 \item{n_cv_folds}{A single integer greater than or equal to 3 giving the
 number of cross-validation folds for each HAL fit. Default: \code{3L}.}
 
@@ -44,7 +50,8 @@ parallel backend: \code{"auto"}, \code{"fork"}, or \code{"psock"}. The fork back
 unavailable on Windows. Default: \code{"auto"}.}
 
 \item{random_seed}{A single nonnegative integer used to construct reproducible
-cross-validation fold assignments. Default: \code{1L}.}
+outer cross-fitting and internal cross-validation fold assignments.
+Default: \code{1L}.}
 
 \item{smoothness_orders}{A nonempty vector of nonnegative integers specifying
 HAL basis smoothness orders. Default: \code{1L}.}
@@ -66,9 +73,10 @@ the confidence level for Wald intervals. Default: \code{0.95}.}
 auxiliary weights are divided by their mean before fitting. Default: \code{TRUE}.}
 
 \item{keep_nuisance_fits}{A single logical value indicating whether the four
-fitted HAL objects, including their underlying \code{cv.glmnet} fits, are
-retained in the returned \code{popart_fit} object. When \code{FALSE}, HAL still runs
-the same cross-validation and produces the same predictions, but its
+fitted HAL objects from every outer fold, including their underlying
+\code{cv.glmnet} fits, are retained in the returned \code{popart_fit} object. When
+\code{FALSE}, HAL still runs the same cross-validation and produces the same
+predictions, but its
 unneeded \code{cv.glmnet} object is discarded to reduce memory use and worker
 transfer overhead. This does not skip \code{glmnet} computation or reduce the
 peak memory used while an individual model is being fitted. Default:
@@ -82,8 +90,9 @@ flagged in diagnostics but are not truncated. Default: \code{0.01}.}
 An object of class \code{popart_control}, implemented as a list with the
 following elements:
 \itemize{
-\item \code{n_cv_folds}, \code{n_lambda_values}, \code{n_cv_workers}, and \code{n_fit_workers}:
-validated integer fitting and resolved worker counts.
+\item \code{crossfit_folds}, \code{n_cv_folds}, \code{n_lambda_values}, \code{n_cv_workers},
+and \code{n_fit_workers}: validated integer fitting and resolved worker
+counts.
 \item \code{n_fit_workers_auto}: whether the complete-fit worker count was
 selected automatically.
 \item \code{detected_cpu_slots}: the positive number of logical CPU slots or
@@ -104,8 +113,9 @@ basis settings.
 \description{
 Creates and validates the computational and inferential settings used by
 \code{\link[=fit_popart]{fit_popart()}}. The settings control the four highly adaptive lasso (HAL)
-nuisance fits, reproducible cross-validation folds, Wald intervals, weight
-normalization, and diagnostic reporting.
+nuisance fits, reproducible outer cross-fitting and internal
+cross-validation folds, Wald intervals, weight normalization, and diagnostic
+reporting.
 }
 \details{
 Parallelism is available at one level at a time. Set \code{n_fit_workers > 1} to
@@ -117,8 +127,8 @@ physical CPU core.
 By default, \code{n_fit_workers = "auto"} queries the CPU slots available to the R
 process with \code{\link[parallelly:availableCores]{parallelly::availableCores()}}. The resolved value is
 \code{max(1, min(4, available_cpu_slots - 2))}. This leaves at least two detected
-CPU slots outside the complete-fit pool when possible and caps the result at four
-because one PopART analysis has four nuisance fits.
+CPU slots outside the complete-fit pool when possible and caps the result at
+four because each outer fold has four nuisance-model types.
 If \code{n_cv_workers > 1}, automatic fit-level parallelism resolves to one so
 that only the CV folds run concurrently.
 

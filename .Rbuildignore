@@ -3,6 +3,7 @@
 ^docs$
 ^examples$
 ^simulation($|/)
+^README[.]Rmd$
 ^[.]git$
 ^[.]github$
 ^[.]gitignore$

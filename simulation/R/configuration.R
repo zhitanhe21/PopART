@@ -21,7 +21,8 @@ REFERENCE_DEFAULT_NUM_KNOTS <- c(5, 3)
 #'   attaches them so unqualified source-file calls keep working.
 load_reference_study_packages <- function() {
   packages <- c(
-    "dplyr", "tidyr", "ggplot2", "hal9001", "doParallel", "parallel"
+    "dplyr", "tidyr", "ggplot2", "legendry", "hal9001", "doParallel",
+    "parallel"
   )
   namespaces <- lapply(packages, loadNamespace)
 

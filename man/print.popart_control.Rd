@@ -15,8 +15,8 @@
 The input \code{popart_control} object, returned invisibly.
 }
 \description{
-Displays the principal cross-validation, parallelism, HAL-basis, and
-confidence-level settings in a \code{popart_control} object.
+Displays the principal cross-fitting, cross-validation, parallelism,
+HAL-basis, and confidence-level settings in a \code{popart_control} object.
 }
 \examples{
 print(popart_control())

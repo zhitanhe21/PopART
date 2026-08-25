@@ -7,8 +7,9 @@
 #'
 #' Creates and validates the computational and inferential settings used by
 #' [fit_popart()]. The settings control the four highly adaptive lasso (HAL)
-#' nuisance fits, reproducible cross-validation folds, Wald intervals, weight
-#' normalization, and diagnostic reporting.
+#' nuisance fits, reproducible outer cross-fitting and internal
+#' cross-validation folds, Wald intervals, weight normalization, and diagnostic
+#' reporting.
 #'
 #' Parallelism is available at one level at a time. Set `n_fit_workers > 1` to
 #' run complete nuisance fits concurrently, or set `n_cv_workers > 1` to run
@@ -19,8 +20,8 @@
 #' By default, `n_fit_workers = "auto"` queries the CPU slots available to the R
 #' process with [parallelly::availableCores()]. The resolved value is
 #' `max(1, min(4, available_cpu_slots - 2))`. This leaves at least two detected
-#' CPU slots outside the complete-fit pool when possible and caps the result at four
-#' because one PopART analysis has four nuisance fits.
+#' CPU slots outside the complete-fit pool when possible and caps the result at
+#' four because each outer fold has four nuisance-model types.
 #' If `n_cv_workers > 1`, automatic fit-level parallelism resolves to one so
 #' that only the CV folds run concurrently.
 #'
@@ -30,6 +31,10 @@
 #' weights relative to unit-weighted trial records and records the scale factor
 #' in the fitted object's diagnostics.
 #'
+#' @param crossfit_folds A positive integer giving the number of outer
+#'   cross-fitting folds. The default, `3L`, enables three-fold cross-fitting.
+#'   Set this to `1L` to disable outer cross-fitting and use full-sample
+#'   nuisance predictions.
 #' @param n_cv_folds A single integer greater than or equal to 3 giving the
 #'   number of cross-validation folds for each HAL fit. Default: `3L`.
 #' @param n_lambda_values A single positive integer giving the number of lasso
@@ -47,7 +52,8 @@
 #'   parallel backend: `"auto"`, `"fork"`, or `"psock"`. The fork backend is
 #'   unavailable on Windows. Default: `"auto"`.
 #' @param random_seed A single nonnegative integer used to construct reproducible
-#'   cross-validation fold assignments. Default: `1L`.
+#'   outer cross-fitting and internal cross-validation fold assignments.
+#'   Default: `1L`.
 #' @param smoothness_orders A nonempty vector of nonnegative integers specifying
 #'   HAL basis smoothness orders. Default: `1L`.
 #' @param max_degree A single positive integer giving the maximum HAL interaction
@@ -62,9 +68,10 @@
 #' @param normalize_auxiliary_weights A single logical value indicating whether
 #'   auxiliary weights are divided by their mean before fitting. Default: `TRUE`.
 #' @param keep_nuisance_fits A single logical value indicating whether the four
-#'   fitted HAL objects, including their underlying `cv.glmnet` fits, are
-#'   retained in the returned `popart_fit` object. When `FALSE`, HAL still runs
-#'   the same cross-validation and produces the same predictions, but its
+#'   fitted HAL objects from every outer fold, including their underlying
+#'   `cv.glmnet` fits, are retained in the returned `popart_fit` object. When
+#'   `FALSE`, HAL still runs the same cross-validation and produces the same
+#'   predictions, but its
 #'   unneeded `cv.glmnet` object is discarded to reduce memory use and worker
 #'   transfer overhead. This does not skip `glmnet` computation or reduce the
 #'   peak memory used while an individual model is being fitted. Default:
@@ -76,8 +83,9 @@
 #' @return An object of class `popart_control`, implemented as a list with the
 #'   following elements:
 #'   \itemize{
-#'   \item `n_cv_folds`, `n_lambda_values`, `n_cv_workers`, and `n_fit_workers`:
-#'     validated integer fitting and resolved worker counts.
+#'   \item `crossfit_folds`, `n_cv_folds`, `n_lambda_values`, `n_cv_workers`,
+#'     and `n_fit_workers`: validated integer fitting and resolved worker
+#'     counts.
 #'   \item `n_fit_workers_auto`: whether the complete-fit worker count was
 #'     selected automatically.
 #'   \item `detected_cpu_slots`: the positive number of logical CPU slots or
@@ -111,6 +119,7 @@
 #'
 #' @export
 popart_control <- function(
+    crossfit_folds = 3L,
     n_cv_folds = 3L,
     n_lambda_values = 50L,
     n_cv_workers = 1L,
@@ -127,6 +136,12 @@ popart_control <- function(
     positivity_threshold = 0.01) {
   parallel_backend <- match.arg(parallel_backend)
 
+  crossfit_folds <- .popart_count(
+    crossfit_folds,
+    "crossfit_folds",
+    minimum = 1L,
+    maximum = 100L
+  )
   n_cv_folds <- .popart_count(n_cv_folds, "n_cv_folds", minimum = 3L)
   n_lambda_values <- .popart_count(n_lambda_values, "n_lambda_values")
   n_cv_workers <- .popart_count(n_cv_workers, "n_cv_workers")
@@ -210,6 +225,7 @@ popart_control <- function(
 
   structure(
     list(
+      crossfit_folds = crossfit_folds,
       n_cv_folds = n_cv_folds,
       n_lambda_values = n_lambda_values,
       n_cv_workers = n_cv_workers,
@@ -234,8 +250,8 @@ popart_control <- function(
 
 #' Print PopART estimation controls
 #'
-#' Displays the principal cross-validation, parallelism, HAL-basis, and
-#' confidence-level settings in a `popart_control` object.
+#' Displays the principal cross-fitting, cross-validation, parallelism,
+#' HAL-basis, and confidence-level settings in a `popart_control` object.
 #'
 #' @param x A `popart_control` object created by [popart_control()].
 #' @param ... Additional arguments, currently ignored.
@@ -248,6 +264,14 @@ popart_control <- function(
 #' @export
 print.popart_control <- function(x, ...) {
   cat("PopART estimation controls\n")
+  crossfit_note <- if (x$crossfit_folds == 1L) " (disabled)" else ""
+  cat(
+    "  Outer cross-fitting folds: ",
+    x$crossfit_folds,
+    crossfit_note,
+    "\n",
+    sep = ""
+  )
   cat("  CV folds / workers: ", x$n_cv_folds, " / ", x$n_cv_workers, "\n", sep = "")
   worker_note <- if (isTRUE(x$n_fit_workers_auto)) {
     if (x$n_cv_workers > 1L) {

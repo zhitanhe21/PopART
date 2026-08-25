@@ -138,6 +138,48 @@ make_placeholder_plot <- function(title, message) {
 }
 
 
+#' Construct Brian-style nested sample-size labels.
+#'
+#' The first factor is the auxiliary sample size and therefore varies fastest;
+#' the second factor groups those labels by trial sample size. Explicit numeric
+#' levels make the display independent of input row order and locale-specific
+#' character sorting.
+#'
+#' @param n_aux Numeric auxiliary sample sizes.
+#' @param n_trial Numeric trial sample sizes.
+#' @param sep Character separator interpreted by `legendry::guide_axis_nested()`.
+#'
+#' @return A factor ordered first by trial size and then by auxiliary size.
+make_sample_size_axis <- function(n_aux, n_trial, sep = ".") {
+  if (length(n_aux) != length(n_trial) || length(n_aux) == 0L) {
+    stop("n_aux and n_trial must be nonempty vectors of equal length.", call. = FALSE)
+  }
+  if (any(!is.finite(n_aux)) || any(!is.finite(n_trial))) {
+    stop("Sample sizes must be finite.", call. = FALSE)
+  }
+
+  auxiliary <- factor(n_aux, levels = sort(unique(n_aux)))
+  trial <- factor(n_trial, levels = sort(unique(n_trial)))
+  interaction(
+    auxiliary,
+    trial,
+    sep = sep,
+    lex.order = FALSE,
+    drop = TRUE
+  )
+}
+
+
+#' Parse estimand labels as plotmath expressions.
+#'
+#' @param labels Character labels such as `eta(0)`, `eta(1)`, `RD`, and `RR`.
+#'
+#' @return An expression vector suitable for a ggplot scale.
+parse_estimand_labels <- function(labels) {
+  parse(text = as.character(labels))
+}
+
+
 #' Summarize Monte Carlo estimates for plotting.
 #'
 #' Converts wide estimator output into long-form truth, estimate, and variance
@@ -246,7 +288,7 @@ write_monte_carlo_figures <- function(
       Version = factor(Version, levels = c("Naive", "Proposed")),
       Trial_Size = factor(n_trial),
       Aux_Size = factor(n_aux),
-      Size = factor(paste0(n_trial, "_", n_aux))
+      Sample_Size = make_sample_size_axis(n_aux, n_trial)
     )
 
   pal <- c("#FF6800", "#803E75", "#C10020", "#FFB300")
@@ -254,21 +296,17 @@ write_monte_carlo_figures <- function(
 
   estimate_plot <- sim_res %>%
     ggplot(aes(
-      x = interaction(n_aux, n_trial),
+      x = Sample_Size,
       y = rdhat,
       color = Version,
       fill = Version
     )) +
-    geom_boxplot(alpha = 0.5, outlier.shape = NA) +
-    geom_point(
-      position = position_jitter(width = 0.08, height = 0),
-      alpha = 0.65,
-      size = 1.6
-    ) +
+    geom_boxplot(alpha = 0.5) +
     geom_hline(yintercept = rd, linetype = "dashed") +
     facet_wrap(~ Version) +
     scale_color_manual(values = pal[seq_len(nlevels(sim_res$Version))]) +
     scale_fill_manual(values = pal[seq_len(nlevels(sim_res$Version))]) +
+    guides(x = legendry::guide_axis_nested()) +
     labs(
       y = expression(hat(RD)),
       x = "Auxiliary and Trial Sample Sizes"
@@ -285,19 +323,28 @@ write_monte_carlo_figures <- function(
 
   variance_data <- summary_table %>%
     filter(is.finite(emp_var), is.finite(est_var), emp_var > 0, est_var > 0) %>%
-    mutate(n_both = factor(paste0(n_aux, "_", n_trial)))
+    mutate(Sample_Size = make_sample_size_axis(n_aux, n_trial, sep = "_"))
 
   if (nrow(variance_data) > 0L) {
     variance_plot <- variance_data %>%
       ggplot(aes(
         x = emp_var,
         y = est_var,
-        color = n_both,
+        color = Sample_Size,
         shape = Param
       )) +
-      scale_x_continuous(transform = "log10") +
-      scale_y_continuous(transform = "log10") +
-      scale_color_manual(values = pal[seq_len(nlevels(variance_data$n_both))]) +
+      scale_x_continuous(
+        transform = "log10",
+        breaks = c(0.001, 0.01, 0.1)
+      ) +
+      scale_y_continuous(
+        transform = "log10",
+        breaks = c(0.001, 0.01, 0.1)
+      ) +
+      scale_color_manual(
+        values = pal[seq_len(nlevels(variance_data$Sample_Size))]
+      ) +
+      scale_shape_discrete(labels = parse_estimand_labels) +
       geom_abline(linetype = "dashed") +
       geom_point(size = 3) +
       facet_grid(Estimator ~ Version) +
@@ -323,20 +370,25 @@ write_monte_carlo_figures <- function(
   }
 
   coverage_data <- summary_table %>%
-    filter(is.finite(ci_cov))
+    filter(is.finite(ci_cov)) %>%
+    mutate(Sample_Size = make_sample_size_axis(n_aux, n_trial))
 
   if (nrow(coverage_data) > 0L) {
     coverage_plot <- coverage_data %>%
       ggplot(aes(
-        x = interaction(n_aux, n_trial),
+        x = Sample_Size,
         y = ci_cov,
         color = Param,
         shape = Param
       )) +
       geom_point(size = 3) +
       geom_hline(yintercept = 0.95, linetype = "dashed") +
-      scale_y_continuous(limits = c(0, 1)) +
-      scale_color_manual(values = pal[seq_len(nlevels(coverage_data$Param))]) +
+      scale_color_manual(
+        values = pal[seq_len(nlevels(coverage_data$Param))],
+        labels = parse_estimand_labels
+      ) +
+      scale_shape_discrete(labels = parse_estimand_labels) +
+      guides(x = legendry::guide_axis_nested()) +
       facet_grid(Estimator ~ Version) +
       labs(
         y = "Empirical CI Coverage",

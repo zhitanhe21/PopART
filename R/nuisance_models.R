@@ -172,6 +172,7 @@
   list(
     fit = fit,
     timing = data.frame(
+      outer_fold = as.integer(spec$outer_fold),
       fit = spec$label,
       observations = nrow(spec$X),
       predictors = ncol(spec$X),

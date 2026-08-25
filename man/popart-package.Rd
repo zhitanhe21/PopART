@@ -9,9 +9,9 @@
 The \code{popart} package analyzes a randomized-trial sample together with an
 auxiliary sample representing the target population. Its main interface,
 \code{\link[=fit_popart]{fit_popart()}}, fits trial-selection, outcome, and censoring nuisance models
-with outer-cross-fitted highly adaptive lasso and returns augmented inverse
-probability weighting estimates for arm-specific means, a risk difference,
-and a risk ratio.
+with outer-cross-fitted highly adaptive lasso or XGBoost and returns
+augmented inverse probability weighting estimates for arm-specific means, a
+risk difference, and a risk ratio.
 }
 \section{Scope}{
 

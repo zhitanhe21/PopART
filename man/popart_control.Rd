@@ -6,6 +6,7 @@
 \usage{
 popart_control(
   crossfit_folds = 3L,
+  nuisance_models = "hal",
   n_cv_folds = 3L,
   n_lambda_values = 50L,
   n_cv_workers = 1L,
@@ -15,6 +16,9 @@ popart_control(
   smoothness_orders = 1L,
   max_degree = 2L,
   num_knots = c(5L, 3L),
+  xgboost_nrounds = 100L,
+  xgboost_max_depth = 6L,
+  xgboost_learning_rate = 0.3,
   treatment_probability = 0.5,
   conf_level = 0.95,
   normalize_auxiliary_weights = TRUE,
@@ -27,6 +31,12 @@ popart_control(
 cross-fitting folds. The default, \code{3L}, enables three-fold cross-fitting.
 Set this to \code{1L} to disable outer cross-fitting and use full-sample
 nuisance predictions.}
+
+\item{nuisance_models}{Either one supported learner name applied to all four
+nuisance models, or a named character vector with entries \code{outcome},
+\code{censoring}, \code{selection_control}, and \code{selection_treated}. Supported
+learners are \code{"hal"} and \code{"xgboost"}. The selection models correspond to
+Q0 and Q1, respectively. Default: \code{"hal"} for all four models.}
 
 \item{n_cv_folds}{A single integer greater than or equal to 3 giving the
 number of cross-validation folds for each HAL fit. Default: \code{3L}.}
@@ -62,6 +72,15 @@ degree. Default: \code{2L}.}
 \item{num_knots}{A nonempty vector of positive integers specifying the HAL
 knot counts. Default: \code{c(5L, 3L)}.}
 
+\item{xgboost_nrounds}{A positive integer giving the number of boosting
+rounds for XGBoost nuisance models. Default: \code{100L}.}
+
+\item{xgboost_max_depth}{A nonnegative integer giving the maximum tree depth
+for XGBoost nuisance models. Default: \code{6L}.}
+
+\item{xgboost_learning_rate}{A number in \verb{(0, 1]} giving the XGBoost learning
+rate. Default: \code{0.3}.}
+
 \item{treatment_probability}{A single numeric value strictly between zero and
 one giving the known probability of assignment to the treated arm. Default:
 \code{0.5}, corresponding to equal randomization.}
@@ -72,15 +91,13 @@ the confidence level for Wald intervals. Default: \code{0.95}.}
 \item{normalize_auxiliary_weights}{A single logical value indicating whether
 auxiliary weights are divided by their mean before fitting. Default: \code{TRUE}.}
 
-\item{keep_nuisance_fits}{A single logical value indicating whether the four
-fitted HAL objects from every outer fold, including their underlying
-\code{cv.glmnet} fits, are retained in the returned \code{popart_fit} object. When
-\code{FALSE}, HAL still runs the same cross-validation and produces the same
-predictions, but its
-unneeded \code{cv.glmnet} object is discarded to reduce memory use and worker
-transfer overhead. This does not skip \code{glmnet} computation or reduce the
-peak memory used while an individual model is being fitted. Default:
-\code{FALSE}.}
+\item{keep_nuisance_fits}{A single logical value indicating whether all four
+fitted nuisance-model objects from every outer fold are retained in the
+returned \code{popart_fit} object. When \code{FALSE}, HAL still runs the same
+cross-validation and produces the same predictions, but its unneeded
+\code{cv.glmnet} object is discarded to reduce memory use and worker-transfer
+overhead. This does not skip model fitting or reduce peak memory while an
+individual model is running. Default: \code{FALSE}.}
 
 \item{positivity_threshold}{A single numeric value strictly between zero and
 \code{0.5}. Estimated probabilities closer than this value to a boundary are
@@ -93,6 +110,8 @@ following elements:
 \item \code{crossfit_folds}, \code{n_cv_folds}, \code{n_lambda_values}, \code{n_cv_workers},
 and \code{n_fit_workers}: validated integer fitting and resolved worker
 counts.
+\item \code{nuisance_models}: the named learner assignment for the four
+nuisance models.
 \item \code{n_fit_workers_auto}: whether the complete-fit worker count was
 selected automatically.
 \item \code{detected_cpu_slots}: the positive number of logical CPU slots or
@@ -103,6 +122,8 @@ resolved when fitting begins.
 \item \code{random_seed}: the validated integer cross-validation seed.
 \item \code{smoothness_orders}, \code{max_degree}, and \code{num_knots}: validated HAL
 basis settings.
+\item \code{xgboost_nrounds}, \code{xgboost_max_depth}, and
+\code{xgboost_learning_rate}: validated XGBoost settings.
 \item \code{treatment_probability}: the treated-arm randomization probability.
 \item \code{conf_level}: the Wald confidence level.
 \item \code{normalize_auxiliary_weights}: the weight-normalization flag.
@@ -112,15 +133,15 @@ basis settings.
 }
 \description{
 Creates and validates the computational and inferential settings used by
-\code{\link[=fit_popart]{fit_popart()}}. The settings control the four highly adaptive lasso (HAL)
-nuisance fits, reproducible outer cross-fitting and internal
-cross-validation folds, Wald intervals, weight normalization, and diagnostic
+\code{\link[=fit_popart]{fit_popart()}}. The settings select HAL or XGBoost for each of four nuisance
+models and control reproducible outer cross-fitting, HAL internal
+cross-validation, Wald intervals, weight normalization, and diagnostic
 reporting.
 }
 \details{
 Parallelism is available at one level at a time. Set \code{n_fit_workers > 1} to
 run complete nuisance fits concurrently, or set \code{n_cv_workers > 1} to run
-folds concurrently while the four nuisance fits are serial. A worker is an R
+HAL CV folds concurrently while complete nuisance fits are serial. A worker is an R
 process scheduled by the operating system; it is not a promise of a dedicated
 physical CPU core.
 
@@ -151,5 +172,13 @@ cv_parallel <- popart_control(n_fit_workers = 1L, n_cv_workers = 3L)
 
 # Or run two of the four complete nuisance fits concurrently.
 fit_parallel <- popart_control(n_fit_workers = 2L, n_cv_workers = 1L)
+
+# Use HAL for outcome/censoring and XGBoost for Q0/Q1.
+mixed <- popart_control(nuisance_models = c(
+  outcome = "hal",
+  censoring = "hal",
+  selection_control = "xgboost",
+  selection_treated = "xgboost"
+))
 
 }

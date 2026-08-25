@@ -27,6 +27,7 @@
   make_job <- function(label, X, Y, weights = NULL) {
     list(
       label = label,
+      learner = unname(control$nuisance_models[[label]]),
       X = X,
       Y = as.numeric(Y),
       weights = if (is.null(weights)) NULL else as.numeric(weights),
@@ -43,7 +44,14 @@
       n_cv_folds = control$n_cv_folds,
       n_lambda_values = control$n_lambda_values,
       n_cv_workers = control$n_cv_workers,
-      return_lasso = isTRUE(control$keep_nuisance_fits)
+      return_lasso = isTRUE(control$keep_nuisance_fits) &&
+        identical(unname(control$nuisance_models[[label]]), "hal"),
+      xgboost_nrounds = control$xgboost_nrounds,
+      xgboost_max_depth = control$xgboost_max_depth,
+      xgboost_learning_rate = control$xgboost_learning_rate,
+      xgboost_seed = control$random_seed +
+        .POPART_CV_SEED_OFFSETS[[label]] +
+        (outer_fold - 1L) * .POPART_OUTER_CV_SEED_STRIDE
     )
   }
 
@@ -219,41 +227,39 @@
       new_treated <- new_control
       new_control$A <- 0L
       new_treated$A <- 1L
-      predictions$mu_control[outcome_rows] <- as.numeric(stats::predict(
+      predictions$mu_control[outcome_rows] <- .predict_nuisance_fit(
         fits$outcome,
         new_data = new_control
-      ))
-      predictions$mu_treated[outcome_rows] <- as.numeric(stats::predict(
+      )
+      predictions$mu_treated[outcome_rows] <- .predict_nuisance_fit(
         fits$outcome,
         new_data = new_treated
-      ))
+      )
     }
 
     censor_rows <- test & data$S == 1L & data$R == 1L
     if (any(censor_rows)) {
-      predictions$censor_probability[censor_rows] <- as.numeric(stats::predict(
+      predictions$censor_probability[censor_rows] <- .predict_nuisance_fit(
         fits$censoring,
         new_data = data[censor_rows, covariates, drop = FALSE]
-      ))
+      )
     }
 
     observed_control <- test & data$Q == 1L & data$A == 0L
     observed_treated <- test & data$Q == 1L & data$A == 1L
     if (any(observed_control)) {
-      predictions$selection_probability[observed_control] <- as.numeric(
-        stats::predict(
+      predictions$selection_probability[observed_control] <-
+        .predict_nuisance_fit(
           fits$selection_control,
           new_data = data[observed_control, covariates, drop = FALSE]
         )
-      )
     }
     if (any(observed_treated)) {
-      predictions$selection_probability[observed_treated] <- as.numeric(
-        stats::predict(
+      predictions$selection_probability[observed_treated] <-
+        .predict_nuisance_fit(
           fits$selection_treated,
           new_data = data[observed_treated, covariates, drop = FALSE]
         )
-      )
     }
   }
 

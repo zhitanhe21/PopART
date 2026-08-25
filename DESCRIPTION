@@ -1,7 +1,7 @@
 Package: popart
 Type: Package
 Title: Population-Augmented Analysis of Randomized Trials
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: person(
     given = "Zhitan",
     family = "He",
@@ -10,9 +10,9 @@ Authors@R: person(
   )
 Description: Fits augmented inverse probability weighting estimators to a
     randomized-trial sample and an auxiliary target-population sample. Highly
-    adaptive lasso nuisance regressions with outer cross-fitting are used to
-    estimate trial selection, outcome, and censoring mechanisms. The main
-    interface accepts user-supplied
+    adaptive lasso or extreme gradient boosting nuisance regressions with outer
+    cross-fitting are used to estimate trial selection, outcome, and censoring
+    mechanisms. The main interface accepts user-supplied
     data frames and returns arm means, treatment contrasts, covariance
     estimates, Wald confidence intervals, and fit diagnostics.
 License: file LICENSE
@@ -29,7 +29,8 @@ Imports:
     utils
 Suggests:
     knitr,
-    rmarkdown
+    rmarkdown,
+    xgboost
 VignetteBuilder: knitr, rmarkdown
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3

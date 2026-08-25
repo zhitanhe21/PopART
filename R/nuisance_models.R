@@ -1,5 +1,5 @@
 ###############################################################################
-# HAL nuisance-model fitting
+# Nuisance-model fitting
 ###############################################################################
 
 
@@ -174,6 +174,7 @@
     timing = data.frame(
       outer_fold = as.integer(spec$outer_fold),
       fit = spec$label,
+      learner = "hal",
       observations = nrow(spec$X),
       predictors = ncol(spec$X),
       response_mean = mean(spec$Y),
@@ -186,12 +187,111 @@
       n_cv_folds = n_cv_folds,
       n_lambda_values = n_lambda_values,
       n_cv_workers = n_cv_workers,
+      n_boosting_rounds = NA_integer_,
+      xgboost_max_depth = NA_integer_,
+      xgboost_learning_rate = NA_real_,
       process_id = Sys.getpid(),
       started_at = format(started_at, "%Y-%m-%d %H:%M:%S"),
       finished_at = format(finished_at, "%Y-%m-%d %H:%M:%S"),
       stringsAsFactors = FALSE
     )
   )
+}
+
+
+.fit_xgboost_job <- function(spec) {
+  if (!requireNamespace("xgboost", quietly = TRUE)) {
+    stop(
+      "Package 'xgboost' is required when a nuisance model uses xgboost.",
+      call. = FALSE
+    )
+  }
+  previous_threads <- .limit_math_threads()
+  on.exit(.restore_math_threads(previous_threads), add = TRUE)
+
+  matrix_x <- as.matrix(spec$X)
+  storage.mode(matrix_x) <- "double"
+  dmatrix_arguments <- list(data = matrix_x, label = spec$Y)
+  if (!is.null(spec$weights)) {
+    dmatrix_arguments$weight <- spec$weights
+  }
+  training_data <- do.call(xgboost::xgb.DMatrix, dmatrix_arguments)
+
+  started_at <- Sys.time()
+  timer <- proc.time()
+  fit <- xgboost::xgb.train(
+    params = list(
+      objective = "binary:logistic",
+      booster = "gbtree",
+      max_depth = as.integer(spec$xgboost_max_depth),
+      eta = as.numeric(spec$xgboost_learning_rate),
+      min_child_weight = 1,
+      subsample = 1,
+      colsample_bytree = 1,
+      lambda = 1,
+      tree_method = "hist",
+      nthread = 1L,
+      seed = as.integer(spec$xgboost_seed),
+      verbosity = 0L
+    ),
+    data = training_data,
+    nrounds = as.integer(spec$xgboost_nrounds),
+    verbose = 0L
+  )
+  elapsed_seconds <- unname((proc.time() - timer)[["elapsed"]])
+  finished_at <- Sys.time()
+
+  list(
+    fit = fit,
+    timing = data.frame(
+      outer_fold = as.integer(spec$outer_fold),
+      fit = spec$label,
+      learner = "xgboost",
+      observations = nrow(spec$X),
+      predictors = ncol(spec$X),
+      response_mean = mean(spec$Y),
+      weight_sum = if (is.null(spec$weights)) NA_real_ else sum(spec$weights),
+      elapsed_seconds = elapsed_seconds,
+      basis_seconds = NA_real_,
+      design_matrix_seconds = NA_real_,
+      lasso_seconds = NA_real_,
+      selected_lambda = NA_real_,
+      n_cv_folds = NA_integer_,
+      n_lambda_values = NA_integer_,
+      n_cv_workers = NA_integer_,
+      n_boosting_rounds = as.integer(spec$xgboost_nrounds),
+      xgboost_max_depth = as.integer(spec$xgboost_max_depth),
+      xgboost_learning_rate = as.numeric(spec$xgboost_learning_rate),
+      process_id = Sys.getpid(),
+      started_at = format(started_at, "%Y-%m-%d %H:%M:%S"),
+      finished_at = format(finished_at, "%Y-%m-%d %H:%M:%S"),
+      stringsAsFactors = FALSE
+    )
+  )
+}
+
+
+.fit_nuisance_job <- function(spec, cv_cluster = NULL) {
+  if (identical(spec$learner, "hal")) {
+    return(.fit_hal_job(spec, cv_cluster = cv_cluster))
+  }
+  if (identical(spec$learner, "xgboost")) {
+    return(.fit_xgboost_job(spec))
+  }
+  stop("Unsupported nuisance learner: ", spec$learner, ".", call. = FALSE)
+}
+
+
+.predict_nuisance_fit <- function(fit, new_data) {
+  if (inherits(fit, "hal9001")) {
+    return(as.numeric(stats::predict(fit, new_data = new_data)))
+  }
+  if (inherits(fit, "xgb.Booster")) {
+    matrix_x <- as.matrix(new_data)
+    storage.mode(matrix_x) <- "double"
+    return(as.numeric(stats::predict(fit, newdata = matrix_x)))
+  }
+  as.numeric(stats::predict(fit, new_data = new_data))
 }
 
 
@@ -248,7 +348,7 @@
   n_workers <- min(max(1L, as.integer(n_fit_workers)), length(job_specs))
 
   if (n_workers == 1L) {
-    output <- lapply(job_specs, .fit_hal_job, cv_cluster = cv_cluster)
+    output <- lapply(job_specs, .fit_nuisance_job, cv_cluster = cv_cluster)
     names(output) <- names(job_specs)
     return(output)
   }
@@ -263,7 +363,7 @@
   if (identical(backend, "fork")) {
     output <- parallel::mclapply(
       job_specs,
-      .fit_hal_job,
+      .fit_nuisance_job,
       mc.cores = n_workers,
       mc.set.seed = FALSE,
       mc.preschedule = FALSE
@@ -276,7 +376,7 @@
       job_specs,
       function(spec) {
         fitter <- get(
-          ".fit_hal_job",
+          ".fit_nuisance_job",
           envir = asNamespace("popart"),
           inherits = FALSE
         )

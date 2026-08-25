@@ -116,7 +116,7 @@ flowchart LR
 | Function | Purpose |
 |---|---|
 | `fit_popart()` | Fit the trial-only and trial-plus-auxiliary analyses |
-| `popart_control()` | Set HAL tuning, random seeds, worker counts, and memory options |
+| `popart_control()` | Select nuisance learners and set tuning, random seeds, worker counts, and memory options |
 | `summary()`, `coef()`, `vcov()`, `confint()` | Inspect estimates and uncertainty |
 | `as.data.frame()` | Return the complete results table |
 
@@ -129,7 +129,8 @@ install.packages(".", repos = NULL, type = "source")
 ```
 
 `popart` requires R 4.1 or later. Package dependencies are listed in
-[`DESCRIPTION`](DESCRIPTION).
+[`DESCRIPTION`](DESCRIPTION). The optional `xgboost` package is required only
+when at least one nuisance model selects the `"xgboost"` learner.
 
 ## Quick start
 
@@ -191,9 +192,9 @@ risk difference, and risk ratio.
 |---|---|
 | `estimates` | Point estimates, standard errors, and confidence limits |
 | `variance`, `covariance`, `full_covariance` | Variance and covariance results |
-| `fit_diagnostics` | Outer-fold labels, HAL fit sizes, timings, selected lambdas, and worker process IDs |
+| `fit_diagnostics` | Outer-fold labels, learner names, fit sizes, tuning values, timings, and worker process IDs |
 | `diagnostics` | Sample and outer-fold sizes, prediction ranges, weight scaling, and messages |
-| `nuisance_fits` | HAL objects grouped by outer fold when explicitly retained; otherwise `NULL` |
+| `nuisance_fits` | HAL or XGBoost objects grouped by outer fold when explicitly retained; otherwise `NULL` |
 | `control`, `columns`, `call` | Reproducibility information for the analysis |
 
 ## Computation controls
@@ -204,23 +205,41 @@ control <- popart_control()
 
 # Explicit serial execution for a memory-constrained computer
 serial_control <- popart_control(n_fit_workers = 1L, n_cv_workers = 1L)
+
+# Use HAL for the outcome and censoring models, and XGBoost for Q0 and Q1.
+mixed_control <- popart_control(
+  nuisance_models = c(
+    outcome = "hal",
+    censoring = "hal",
+    selection_control = "xgboost",
+    selection_treated = "xgboost"
+  )
+)
 ```
 
 | Control | Default | Meaning |
 |---|---|---|
 | `crossfit_folds` | `3L` | Outer folds used to generate out-of-fold nuisance predictions; set to `1L` to disable |
-| `n_fit_workers` | `"auto"` | Complete HAL fits that may run concurrently; automatic mode uses `max(1, min(4, available_cpu_slots - 2))` |
+| `nuisance_models` | all `"hal"` | Named learner assignment for outcome, censoring, Q0, and Q1; supports `"hal"` and `"xgboost"` |
+| `n_fit_workers` | `"auto"` | Complete nuisance fits that may run concurrently; automatic mode uses `max(1, min(4, available_cpu_slots - 2))` |
 | `n_cv_workers` | `1L` | Workers used across CV folds inside one HAL fit |
 | `n_cv_folds` | `3L` | Cross-validation folds per HAL fit |
 | `n_lambda_values` | `50L` | Lasso penalty values per HAL fit |
 | `num_knots` | `c(5L, 3L)` | HAL knot counts |
-| `keep_nuisance_fits` | `FALSE` | Do not retain completed `cv.glmnet` objects unless requested |
+| `xgboost_nrounds` | `100L` | Boosting rounds for XGBoost fits |
+| `xgboost_max_depth` | `6L` | Maximum XGBoost tree depth |
+| `xgboost_learning_rate` | `0.3` | XGBoost learning rate |
+| `keep_nuisance_fits` | `FALSE` | Do not retain completed nuisance-model objects unless requested |
 
 Workers are R processes scheduled over the logical CPU slots available to R.
 Only one parallel level is used at a time: either complete fits or the CV folds
 inside a fit. With the default three-fold outer cross-fitting, one analysis
-queues 12 complete HAL fits (four nuisance-model types in each fold). Each fit
+queues 12 complete nuisance fits (four model types in each fold). Each HAL fit
 still uses the separate three-fold internal CV to choose its lasso penalty.
+XGBoost fits do not use this HAL CV; they use the explicit boosting settings
+above and one CPU thread per complete fit so that fit-level scheduling remains
+in control of total parallelism. The `selection_control` and
+`selection_treated` entries are the Q0 and Q1 models, respectively.
 
 ## Simulation
 

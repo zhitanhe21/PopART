@@ -6,14 +6,14 @@
 #' Configure PopART estimation
 #'
 #' Creates and validates the computational and inferential settings used by
-#' [fit_popart()]. The settings control the four highly adaptive lasso (HAL)
-#' nuisance fits, reproducible outer cross-fitting and internal
-#' cross-validation folds, Wald intervals, weight normalization, and diagnostic
+#' [fit_popart()]. The settings select HAL or XGBoost for each of four nuisance
+#' models and control reproducible outer cross-fitting, HAL internal
+#' cross-validation, Wald intervals, weight normalization, and diagnostic
 #' reporting.
 #'
 #' Parallelism is available at one level at a time. Set `n_fit_workers > 1` to
 #' run complete nuisance fits concurrently, or set `n_cv_workers > 1` to run
-#' folds concurrently while the four nuisance fits are serial. A worker is an R
+#' HAL CV folds concurrently while complete nuisance fits are serial. A worker is an R
 #' process scheduled by the operating system; it is not a promise of a dedicated
 #' physical CPU core.
 #'
@@ -35,6 +35,11 @@
 #'   cross-fitting folds. The default, `3L`, enables three-fold cross-fitting.
 #'   Set this to `1L` to disable outer cross-fitting and use full-sample
 #'   nuisance predictions.
+#' @param nuisance_models Either one supported learner name applied to all four
+#'   nuisance models, or a named character vector with entries `outcome`,
+#'   `censoring`, `selection_control`, and `selection_treated`. Supported
+#'   learners are `"hal"` and `"xgboost"`. The selection models correspond to
+#'   Q0 and Q1, respectively. Default: `"hal"` for all four models.
 #' @param n_cv_folds A single integer greater than or equal to 3 giving the
 #'   number of cross-validation folds for each HAL fit. Default: `3L`.
 #' @param n_lambda_values A single positive integer giving the number of lasso
@@ -60,6 +65,12 @@
 #'   degree. Default: `2L`.
 #' @param num_knots A nonempty vector of positive integers specifying the HAL
 #'   knot counts. Default: `c(5L, 3L)`.
+#' @param xgboost_nrounds A positive integer giving the number of boosting
+#'   rounds for XGBoost nuisance models. Default: `100L`.
+#' @param xgboost_max_depth A nonnegative integer giving the maximum tree depth
+#'   for XGBoost nuisance models. Default: `6L`.
+#' @param xgboost_learning_rate A number in `(0, 1]` giving the XGBoost learning
+#'   rate. Default: `0.3`.
 #' @param treatment_probability A single numeric value strictly between zero and
 #'   one giving the known probability of assignment to the treated arm. Default:
 #'   `0.5`, corresponding to equal randomization.
@@ -67,15 +78,13 @@
 #'   the confidence level for Wald intervals. Default: `0.95`.
 #' @param normalize_auxiliary_weights A single logical value indicating whether
 #'   auxiliary weights are divided by their mean before fitting. Default: `TRUE`.
-#' @param keep_nuisance_fits A single logical value indicating whether the four
-#'   fitted HAL objects from every outer fold, including their underlying
-#'   `cv.glmnet` fits, are retained in the returned `popart_fit` object. When
-#'   `FALSE`, HAL still runs the same cross-validation and produces the same
-#'   predictions, but its
-#'   unneeded `cv.glmnet` object is discarded to reduce memory use and worker
-#'   transfer overhead. This does not skip `glmnet` computation or reduce the
-#'   peak memory used while an individual model is being fitted. Default:
-#'   `FALSE`.
+#' @param keep_nuisance_fits A single logical value indicating whether all four
+#'   fitted nuisance-model objects from every outer fold are retained in the
+#'   returned `popart_fit` object. When `FALSE`, HAL still runs the same
+#'   cross-validation and produces the same predictions, but its unneeded
+#'   `cv.glmnet` object is discarded to reduce memory use and worker-transfer
+#'   overhead. This does not skip model fitting or reduce peak memory while an
+#'   individual model is running. Default: `FALSE`.
 #' @param positivity_threshold A single numeric value strictly between zero and
 #'   `0.5`. Estimated probabilities closer than this value to a boundary are
 #'   flagged in diagnostics but are not truncated. Default: `0.01`.
@@ -86,6 +95,8 @@
 #'   \item `crossfit_folds`, `n_cv_folds`, `n_lambda_values`, `n_cv_workers`,
 #'     and `n_fit_workers`: validated integer fitting and resolved worker
 #'     counts.
+#'   \item `nuisance_models`: the named learner assignment for the four
+#'     nuisance models.
 #'   \item `n_fit_workers_auto`: whether the complete-fit worker count was
 #'     selected automatically.
 #'   \item `detected_cpu_slots`: the positive number of logical CPU slots or
@@ -96,6 +107,8 @@
 #'   \item `random_seed`: the validated integer cross-validation seed.
 #'   \item `smoothness_orders`, `max_degree`, and `num_knots`: validated HAL
 #'     basis settings.
+#'   \item `xgboost_nrounds`, `xgboost_max_depth`, and
+#'     `xgboost_learning_rate`: validated XGBoost settings.
 #'   \item `treatment_probability`: the treated-arm randomization probability.
 #'   \item `conf_level`: the Wald confidence level.
 #'   \item `normalize_auxiliary_weights`: the weight-normalization flag.
@@ -117,9 +130,18 @@
 #' # Or run two of the four complete nuisance fits concurrently.
 #' fit_parallel <- popart_control(n_fit_workers = 2L, n_cv_workers = 1L)
 #'
+#' # Use HAL for outcome/censoring and XGBoost for Q0/Q1.
+#' mixed <- popart_control(nuisance_models = c(
+#'   outcome = "hal",
+#'   censoring = "hal",
+#'   selection_control = "xgboost",
+#'   selection_treated = "xgboost"
+#' ))
+#'
 #' @export
 popart_control <- function(
     crossfit_folds = 3L,
+    nuisance_models = "hal",
     n_cv_folds = 3L,
     n_lambda_values = 50L,
     n_cv_workers = 1L,
@@ -129,6 +151,9 @@ popart_control <- function(
     smoothness_orders = 1L,
     max_degree = 2L,
     num_knots = c(5L, 3L),
+    xgboost_nrounds = 100L,
+    xgboost_max_depth = 6L,
+    xgboost_learning_rate = 0.3,
     treatment_probability = 0.5,
     conf_level = 0.95,
     normalize_auxiliary_weights = TRUE,
@@ -142,6 +167,7 @@ popart_control <- function(
     minimum = 1L,
     maximum = 100L
   )
+  nuisance_models <- .popart_nuisance_models(nuisance_models)
   n_cv_folds <- .popart_count(n_cv_folds, "n_cv_folds", minimum = 3L)
   n_lambda_values <- .popart_count(n_lambda_values, "n_lambda_values")
   n_cv_workers <- .popart_count(n_cv_workers, "n_cv_workers")
@@ -176,6 +202,19 @@ popart_control <- function(
     maximum = .Machine$integer.max - 100000L
   )
   max_degree <- .popart_count(max_degree, "max_degree")
+  xgboost_nrounds <- .popart_count(
+    xgboost_nrounds,
+    "xgboost_nrounds"
+  )
+  xgboost_max_depth <- .popart_count(
+    xgboost_max_depth,
+    "xgboost_max_depth",
+    minimum = 0L
+  )
+  xgboost_learning_rate <- .popart_rate(
+    xgboost_learning_rate,
+    "xgboost_learning_rate"
+  )
 
   if (n_cv_workers > n_cv_folds) {
     stop("n_cv_workers cannot exceed n_cv_folds.", call. = FALSE)
@@ -226,6 +265,7 @@ popart_control <- function(
   structure(
     list(
       crossfit_folds = crossfit_folds,
+      nuisance_models = nuisance_models,
       n_cv_folds = n_cv_folds,
       n_lambda_values = n_lambda_values,
       n_cv_workers = n_cv_workers,
@@ -237,6 +277,9 @@ popart_control <- function(
       smoothness_orders = smoothness_orders,
       max_degree = max_degree,
       num_knots = num_knots,
+      xgboost_nrounds = xgboost_nrounds,
+      xgboost_max_depth = xgboost_max_depth,
+      xgboost_learning_rate = xgboost_learning_rate,
       treatment_probability = treatment_probability,
       conf_level = conf_level,
       normalize_auxiliary_weights = normalize_auxiliary_weights,
@@ -272,6 +315,12 @@ print.popart_control <- function(x, ...) {
     "\n",
     sep = ""
   )
+  cat(
+    "  Nuisance models: ",
+    paste(names(x$nuisance_models), x$nuisance_models, sep = "=", collapse = ", "),
+    "\n",
+    sep = ""
+  )
   cat("  CV folds / workers: ", x$n_cv_folds, " / ", x$n_cv_workers, "\n", sep = "")
   worker_note <- if (isTRUE(x$n_fit_workers_auto)) {
     if (x$n_cv_workers > 1L) {
@@ -295,6 +344,14 @@ print.popart_control <- function(x, ...) {
   )
   cat("  Parallel backend: ", x$parallel_backend, "\n", sep = "")
   cat("  HAL knots: ", paste(x$num_knots, collapse = ", "), "\n", sep = "")
+  if (any(x$nuisance_models == "xgboost")) {
+    cat(
+      "  XGBoost rounds / depth / rate: ",
+      x$xgboost_nrounds, " / ", x$xgboost_max_depth, " / ",
+      x$xgboost_learning_rate, "\n",
+      sep = ""
+    )
+  }
   cat("  Confidence level: ", x$conf_level, "\n", sep = "")
   invisible(x)
 }
@@ -361,6 +418,55 @@ print.popart_control <- function(x, ...) {
     stop(name, " must be a single number strictly between 0 and 1.", call. = FALSE)
   }
   value
+}
+
+
+.popart_rate <- function(x, name) {
+  value <- suppressWarnings(as.numeric(x))
+  if (length(x) != 1L || !is.finite(value) || value <= 0 || value > 1) {
+    stop(name, " must be a single number in (0, 1].", call. = FALSE)
+  }
+  value
+}
+
+
+.popart_nuisance_models <- function(x) {
+  model_names <- c(
+    "outcome",
+    "censoring",
+    "selection_control",
+    "selection_treated"
+  )
+  if (!is.character(x) || length(x) < 1L || anyNA(x) || any(!nzchar(x))) {
+    stop(
+      "nuisance_models must be a supported learner name or a named character vector.",
+      call. = FALSE
+    )
+  }
+  if (length(x) == 1L && (is.null(names(x)) || !nzchar(names(x)))) {
+    x <- stats::setNames(rep(x, length(model_names)), model_names)
+  } else {
+    if (is.null(names(x)) || anyNA(names(x)) || any(!nzchar(names(x))) ||
+        anyDuplicated(names(x)) || !setequal(names(x), model_names)) {
+      stop(
+        "A model-specific nuisance_models vector must have exactly these names: ",
+        paste(model_names, collapse = ", "), ".",
+        call. = FALSE
+      )
+    }
+    x <- x[model_names]
+  }
+  x <- tolower(x)
+  unsupported <- setdiff(unique(x), c("hal", "xgboost"))
+  if (length(unsupported)) {
+    stop(
+      "Unsupported nuisance model", if (length(unsupported) > 1L) "s" else "",
+      ": ", paste(unsupported, collapse = ", "),
+      ". Supported models are hal and xgboost.",
+      call. = FALSE
+    )
+  }
+  stats::setNames(unname(x), model_names)
 }
 
 

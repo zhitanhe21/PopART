@@ -177,9 +177,20 @@ fit_parallel <- popart_control(n_fit_workers = 2L, n_cv_workers = 1L)
 # Or parallelize three CV folds while complete fits remain serial.
 cv_parallel <- popart_control(n_fit_workers = 1L, n_cv_workers = 3L)
 
+# Mix learners: HAL for outcome/censoring and XGBoost for Q0/Q1.
+mixed_learners <- popart_control(
+  nuisance_models = c(
+    outcome = "hal",
+    censoring = "hal",
+    selection_control = "xgboost",
+    selection_treated = "xgboost"
+  )
+)
+
 automatic
 fit_parallel
 cv_parallel
+mixed_learners
 ```
 
 The default `crossfit_folds = 3L` trains each nuisance model on two outer folds
@@ -193,6 +204,10 @@ queue. Automatic mode uses
 `max(1, min(4, available_cpu_slots - 2))`. `n_cv_workers` controls workers
 for the folds inside a single HAL fit and defaults to one. If CV parallelism is
 requested while fit workers are automatic, complete fits are run serially.
+The selection-control and selection-treated models correspond to Q0 and Q1.
+XGBoost models use `xgboost_nrounds`, `xgboost_max_depth`, and
+`xgboost_learning_rate`; they do not use HAL's internal CV and are restricted
+to one thread per complete fit to avoid nested CPU oversubscription.
 
 Creating a control object does not start workers. Workers are started only when
 the object is passed to `fit_popart()`. A worker is an operating-system process

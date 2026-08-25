@@ -42,6 +42,15 @@ control <- popart_control()
 stopifnot(
   inherits(control, "popart_control"),
   identical(control$crossfit_folds, 3L),
+  identical(
+    control$nuisance_models,
+    c(
+      outcome = "hal",
+      censoring = "hal",
+      selection_control = "hal",
+      selection_treated = "hal"
+    )
+  ),
   identical(control$n_cv_folds, 3L),
   identical(control$num_knots, c(5L, 3L)),
   identical(control$n_fit_workers, auto_fit_workers(available_cpu_slots)),
@@ -63,7 +72,34 @@ expect_error(
 expect_error(popart_control(n_cv_folds = 2L), "n_cv_folds")
 expect_error(popart_control(crossfit_folds = 0L), "crossfit_folds")
 expect_error(popart_control(crossfit_folds = 101L), "crossfit_folds")
+expect_error(popart_control(nuisance_models = "random_forest"), "Unsupported")
+expect_error(
+  popart_control(nuisance_models = c(outcome = "hal", censoring = "hal")),
+  "exactly these names"
+)
+expect_error(popart_control(xgboost_nrounds = 0L), "xgboost_nrounds")
+expect_error(popart_control(xgboost_learning_rate = 1.1), "(0, 1]")
 expect_error(popart_control(n_fit_workers = "fast"), "auto")
+
+mixed_models <- c(
+  outcome = "hal",
+  censoring = "hal",
+  selection_control = "xgboost",
+  selection_treated = "xgboost"
+)
+mixed_control <- popart_control(
+  nuisance_models = mixed_models,
+  n_fit_workers = 1L,
+  xgboost_nrounds = 5L,
+  xgboost_max_depth = 2L,
+  xgboost_learning_rate = 0.2
+)
+stopifnot(
+  identical(mixed_control$nuisance_models, mixed_models),
+  identical(mixed_control$xgboost_nrounds, 5L),
+  identical(mixed_control$xgboost_max_depth, 2L),
+  identical(mixed_control$xgboost_learning_rate, 0.2)
+)
 
 base_cars <- datasets::mtcars
 cars <- base_cars[
@@ -132,6 +168,15 @@ stopifnot(
     identical(sort(unique(job$fold_ids)), seq_len(control$n_cv_folds))
   }, logical(1))),
   all(!vapply(jobs, `[[`, logical(1), "return_lasso"))
+)
+
+mixed_jobs <- make_jobs(prepared$data, prepared$covariates, mixed_control)
+stopifnot(
+  identical(
+    vapply(mixed_jobs, `[[`, character(1), "learner"),
+    mixed_models[names(mixed_jobs)]
+  ),
+  all(!vapply(mixed_jobs, `[[`, logical(1), "return_lasso"))
 )
 
 make_outer_folds <- getFromNamespace(
@@ -333,4 +378,58 @@ if (identical(Sys.getenv("POPART_RUN_INTEGRATION_TESTS"), "true")) {
     all(dim(vcov(fit, estimator = "trial_auxiliary")) == c(4L, 4L)),
     all(dim(confint(fit, estimator = "trial_auxiliary")) == c(4L, 2L))
   )
+
+  if (requireNamespace("xgboost", quietly = TRUE)) {
+    mixed_arguments <- arguments
+    mixed_arguments$control <- popart_control(
+      crossfit_folds = 3L,
+      nuisance_models = mixed_models,
+      n_cv_folds = 3L,
+      n_lambda_values = 3L,
+      n_fit_workers = 2L,
+      n_cv_workers = 1L,
+      max_degree = 1L,
+      num_knots = 1L,
+      xgboost_nrounds = 5L,
+      xgboost_max_depth = 2L,
+      keep_nuisance_fits = TRUE,
+      random_seed = 20260805L
+    )
+    mixed_fit <- suppressWarnings(do.call(fit_popart, mixed_arguments))
+    mixed_fit_repeat <- suppressWarnings(do.call(fit_popart, mixed_arguments))
+    stopifnot(
+      inherits(mixed_fit, "popart_fit"),
+      all(is.finite(mixed_fit$estimates$estimate)),
+      isTRUE(all.equal(
+        mixed_fit$estimates,
+        mixed_fit_repeat$estimates,
+        tolerance = 1e-12,
+        check.attributes = TRUE
+      )),
+      identical(
+        mixed_fit$fit_diagnostics$learner,
+        rep(c("xgboost", "xgboost", "hal", "hal"), 3L)
+      ),
+      all(is.na(
+        mixed_fit$fit_diagnostics$selected_lambda[
+          mixed_fit$fit_diagnostics$learner == "xgboost"
+        ]
+      )),
+      all(
+        mixed_fit$fit_diagnostics$n_boosting_rounds[
+          mixed_fit$fit_diagnostics$learner == "xgboost"
+        ] == 5L
+      ),
+      all(vapply(
+        mixed_fit$nuisance_fits,
+        function(fold) {
+          inherits(fold$selection_control, "xgb.Booster") &&
+            inherits(fold$selection_treated, "xgb.Booster") &&
+            inherits(fold$outcome, "hal9001") &&
+            inherits(fold$censoring, "hal9001")
+        },
+        logical(1)
+      ))
+    )
+  }
 }

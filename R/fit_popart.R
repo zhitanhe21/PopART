@@ -9,11 +9,12 @@
 #' randomized-trial sample and an auxiliary sample from the target population.
 #' Both a trial-only estimator and a trial-and-auxiliary estimator are returned.
 #'
-#' Within every outer cross-fitting fold, four highly adaptive lasso (HAL)
-#' nuisance models are fitted: one outcome regression, one censoring regression,
-#' and arm-specific trial-selection regressions. The models are trained on the
-#' complementary folds and predict the held-out fold. Held-out predictions are
-#' pooled before the two AIPW estimators are computed. Set
+#' Within every outer cross-fitting fold, four nuisance models are fitted: one
+#' outcome regression, one censoring regression, and arm-specific
+#' trial-selection regressions. Each model can use highly adaptive lasso (HAL)
+#' or XGBoost, as specified in `control$nuisance_models`. The models are trained
+#' on the complementary folds and predict the held-out fold. Held-out
+#' predictions are pooled before the two AIPW estimators are computed. Set
 #' `control$crossfit_folds = 1L` to recover full-sample nuisance fitting without
 #' outer cross-fitting. The outcome regression is shared by the two estimators.
 #' The function analyzes data supplied by the user; it does not generate data or
@@ -77,10 +78,11 @@
 #'   \item `full_covariance`: a named list of four-by-four covariance matrices
 #'     for the arm means, risk difference, and risk ratio, one per estimator.
 #'   \item `fit_diagnostics`: a data frame with columns `outer_fold`, `fit`,
-#'     `observations`, `predictors`, `response_mean`, `weight_sum`,
+#'     `learner`, `observations`, `predictors`, `response_mean`, `weight_sum`,
 #'     `elapsed_seconds`,
 #'     `basis_seconds`, `design_matrix_seconds`, `lasso_seconds`,
 #'     `selected_lambda`, `n_cv_folds`, `n_lambda_values`, `n_cv_workers`,
+#'     `n_boosting_rounds`, `xgboost_max_depth`, `xgboost_learning_rate`,
 #'     `process_id`, `started_at`, and `finished_at`.
 #'   \item `diagnostics`: a list containing `sample_sizes`, outer-fold sizes
 #'     (`outer_fold_sizes`), the auxiliary-weight normalization scale
@@ -88,7 +90,7 @@
 #'     (`prediction_ranges`), and diagnostic `messages`.
 #'   \item `nuisance_fits`: a list with one element per outer fold. Each fold
 #'     contains `selection_control`, `selection_treated`, `outcome`, and
-#'     `censoring` HAL objects when `control$keep_nuisance_fits` is `TRUE`;
+#'     `censoring` fitted model objects when `control$keep_nuisance_fits` is `TRUE`;
 #'     otherwise `NULL`.
 #'   \item `columns`: a list with elements `outcome`, `treatment`, `response`,
 #'     `censoring`, `covariates`, `auxiliary_weight`, and `treatment_values`,
@@ -162,10 +164,18 @@ fit_popart <- function(
     auxiliary_weight = NULL,
     treatment_values = c(0, 1),
     control = popart_control()) {
-  if (!requireNamespace("hal9001", quietly = TRUE)) {
+  control <- .validate_popart_control(control)
+  if (any(control$nuisance_models == "hal") &&
+      !requireNamespace("hal9001", quietly = TRUE)) {
     stop("Package 'hal9001' is required to fit PopART models.", call. = FALSE)
   }
-  control <- .validate_popart_control(control)
+  if (any(control$nuisance_models == "xgboost") &&
+      !requireNamespace("xgboost", quietly = TRUE)) {
+    stop(
+      "Package 'xgboost' is required when a nuisance model uses xgboost.",
+      call. = FALSE
+    )
+  }
   input <- .prepare_popart_input(
     trial_data = trial_data,
     auxiliary_data = auxiliary_data,

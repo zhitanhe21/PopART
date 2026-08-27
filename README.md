@@ -197,26 +197,11 @@ Only one function is needed for a real-data analysis.
 
 ### Analysis pipeline
 
-```text
-Algorithm 1  PopART estimation
-
-Input:  trial data, auxiliary data, variable names, and HAL settings
-Output: Naive and Proposed G-formula, IPW, and AIPW estimates
-
-Fit the HAL outcome model among uncensored trial responders.
-Fit the HAL censoring model among trial responders.
-
-For each treatment arm a in {0, 1}:
-    Fit a HAL selection model using observed trial outcomes in arm a
-    and the auxiliary covariates.
-
-Reuse the four HAL fits to estimate eta(0), eta(1), RD, and RR.
-Use trial responders for Naive estimators.
-Use the auxiliary target population for Proposed estimators.
-Aggregate contributions by cluster to obtain standard errors and 95% CIs.
-
-Return the estimates, variances, and covariance matrices.
-```
+| **Algorithm 1: PopART estimation** |
+|:---|
+| **Input:** Trial data, auxiliary data, variable names, and HAL settings.<br>**Output:** Naive and Proposed G-formula, IPW, and AIPW estimates. |
+| **Fit** the HAL outcome model among uncensored trial responders.<br>**Fit** the HAL censoring model among trial responders.<br><br>**For each** treatment arm `a` in `{0, 1}`:<br>&nbsp;&nbsp;&nbsp;&nbsp;**Fit** a HAL selection model using observed trial outcomes in arm `a` and the auxiliary covariates.<br><br>**Reuse** the four HAL fits to estimate `eta(0)`, `eta(1)`, `RD`, and `RR`.<br>**Use** trial responders for Naive estimators and the auxiliary target population for Proposed estimators.<br>**Aggregate** contributions by cluster to obtain standard errors and 95% confidence intervals. |
+| **Return:** Estimates, variances, and covariance matrices. |
 
 ## Simulation 1: parametric model specification
 
@@ -270,11 +255,11 @@ observed outcomes. The estimators use `S` to distinguish the two samples.
 
 ### Analysis pipeline
 
-1. Generate one trial and one auxiliary sample.
-2. Fit six estimators under four `mu`/`pi` specification scenarios.
-3. Repeat for all four sample-size combinations.
-4. Summarize bias, empirical variance, estimated variance, MSE, and 95% CI coverage.
-5. Save the result table and three figures.
+| **Algorithm 2: Simulation 1 Monte Carlo study** |
+|:---|
+| **Input:** Monte Carlo replicates, trial and auxiliary sample sizes, and parametric model specifications.<br>**Output:** Simulation summaries and figures for G-formula, IPW, and AIPW. |
+| **For each** sample-size combination and Monte Carlo replicate:<br>&nbsp;&nbsp;&nbsp;&nbsp;**Generate** one trial sample and one auxiliary sample.<br>&nbsp;&nbsp;&nbsp;&nbsp;**For each** outcome/selection model specification:<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**Fit** Naive and Proposed G-formula, IPW, and AIPW estimators.<br><br>**Summarize** bias, empirical variance, estimated variance, MSE, and 95% CI coverage. |
+| **Return:** The result table and three figures. |
 
 ### Current results
 
@@ -365,12 +350,11 @@ observed auxiliary variables. HAL is fitted with `X1`, `W1`, `W2`, and `W3`.
 
 ### Analysis pipeline
 
-1. Generate nonlinear trial and auxiliary data.
-2. Prepare four HAL jobs for each active replicate.
-3. Fit all jobs through the global worker pool.
-4. Reuse the fits for Naive and Proposed AIPW.
-5. Summarize RD estimates, empirical and estimated variances, and 95% CI coverage.
-6. Save the result table and three figures.
+| **Algorithm 3: Simulation 2 Monte Carlo study** |
+|:---|
+| **Input:** Monte Carlo replicates, trial and auxiliary sample sizes, HAL settings, and global scheduler settings.<br>**Output:** Simulation summaries and figures for Naive and Proposed AIPW. |
+| **For each** active Monte Carlo replicate:<br>&nbsp;&nbsp;&nbsp;&nbsp;**Generate** nonlinear trial and auxiliary data.<br>&nbsp;&nbsp;&nbsp;&nbsp;**Prepare** four HAL fitting jobs.<br><br>**Fit** all HAL jobs through one global worker pool.<br>**Reuse** the four fits for Naive and Proposed AIPW.<br>**Summarize** RD estimates, empirical and estimated variances, and 95% CI coverage. |
+| **Return:** The result table and three figures. |
 
 ### Current results
 

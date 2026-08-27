@@ -1,16 +1,3 @@
-cache/
-output/
-.Rhistory
-.RData
-Rplots.pdf
-.Rproj.user/
-*.Rproj
 *.Rcheck/
 *.tar.gz
-Meta/
-doc/
-.DS_Store
-*.partial
-*.previous-*
-*.invalid-fit-cache-*
-*.invalid-run-checkpoint-*
+simulation/results/

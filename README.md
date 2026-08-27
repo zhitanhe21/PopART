@@ -1,327 +1,392 @@
+# popart: Causal Inference for Cluster-Randomized Trials with Differential Nonresponse
 
-<!-- README.md is generated from README.Rmd. Edit README.Rmd, then render it. -->
+## Background and data structure
 
-# popart
+### Background
 
-`popart` is an R package for analyzing a randomized-trial data frame
-together with an auxiliary data frame. The installed package provides a
-small analysis API; data generation, Monte Carlo experiments, and the
-global scheduler remain in the repository-only
-[`simulation/`](simulation/) directory.
+`popart` estimates population-level causal effects from a cluster-randomized
+trial with differential individual nonresponse and outcome censoring.
 
-## Mathematical formulation
+| Design feature | Statistical role |
+|---|---|
+| Cluster-level treatment | Every individual in a randomized cluster receives the same treatment assignment |
+| Individual response | Only some invited individuals respond and provide individual-level data |
+| Outcome censoring | A responder's outcome may remain unobserved |
+| Auxiliary sample | Supplies the baseline covariate distribution of the target population |
 
-Let $S=1$ identify an observation from the trial and $S=0$ an
-observation from the auxiliary sample. Let $A\in\{0,1\}$ denote
-treatment, $R$ response, $C$ censoring, $Y$ the observed binary outcome,
-and $L$ the baseline covariates shared by the two data sources. The
-auxiliary sample supplies the target-population distribution of $L$,
-with optional sampling weights $\omega$; it does not need to contain
-outcomes.
+If response differs by treatment or baseline covariates, complete trial cases
+may not represent the population in the randomized clusters. The proposed
+estimators combine observed trial outcomes with the auxiliary covariates to
+address this selection problem.
 
-The treatment-specific target mean is
+For binary outcomes, the causal targets are:
 
-$$
-\eta(a)=\operatorname{E}\{Y(a)\}, \qquad a\in\{0,1\}.
-$$
+| Parameter | Definition | Meaning |
+|---|---|---|
+| `eta(0)` | `E[Y(0)]` | Population risk if all clusters received control |
+| `eta(1)` | `E[Y(1)]` | Population risk if all clusters received treatment |
+| `RD` | `eta(1) - eta(0)` | Causal risk difference |
+| `RR` | `eta(1) / eta(0)` | Causal risk ratio |
 
-The outcome nuisance function is learned among observed trial
-participants:
+### Data structure
 
-$$
-\mu_a(l)
-=\operatorname{E}\left(Y\mid A=a,S=1,R=1,C=0,L=l\right).
-$$
+The package receives trial and auxiliary data frames separately. The example
+CSV uses `S` to identify the two samples before splitting them.
 
-To estimate the probability of appearing as an observed trial
-participant, define $Q=S R(1-C)$. For each treatment arm $a$, combine
-observations with $Q=1,A=a$ and auxiliary observations with $S=0$, and
-let
+| Variable | Level | Meaning | Trial | Auxiliary |
+|---|---|---|---:|---:|
+| `id` | Individual | Observation identifier | yes | yes |
+| `cluster` | Cluster | Randomization unit | yes | yes |
+| `S` | Individual | `1` = trial, `0` = auxiliary; used only to split the CSV | yes | yes |
+| `A` | Cluster | Treatment assignment; constant within cluster | yes | not required |
+| `R` | Individual | `1` = trial respondent | yes | no |
+| `C` | Individual | `1` = censored outcome among respondents | yes | no |
+| `Y` | Individual | Binary outcome, observed when `R = 1` and `C = 0` | yes | no |
+| `X1`, `X2` | Cluster | Cluster-level baseline covariates | yes | yes |
+| `W1`, `W2` | Individual | Individual-level baseline covariates | column required; responders used | yes |
 
-$$
-g_a(l)=\Pr^*(Q=1\mid L=l),
-\qquad
-o_a(l)=\frac{g_a(l)}{1-g_a(l)}.
-$$
+**Required cluster structure:** within `trial_data`, every row with the same
+`cluster` value must have the same non-missing treatment `A`. The auxiliary
+sample does not need a treatment column. Data with treatment varying between
+individuals in the same cluster do not match this cluster-randomized design.
 
-Here $\Pr^*$ refers to that arm-specific restricted sample. Under unit
-auxiliary weights, the paper’s joint selection probability is
-proportional to these odds:
-
-$$
-\pi_a(l)
-=\Pr(A=a,R=1,C=0\mid L=l)
-=\frac{n_{\mathrm{aux}}}{n}\,o_a(l).
-$$
-
-`popart` uses the equivalent Hájek-normalized form. Define
-
-$$
-\widehat H_a
-=\sum_{i:Q_i=1,A_i=a}\frac{1}{\widehat o_a(L_i)},
-\qquad
-W_{\mathrm{aux}}=\sum_{i:S_i=0}\omega_i.
-$$
-
-The auxiliary-data-assisted AIPW estimator is
-
-$$
-\widehat\eta_{\mathrm{AIPW}}(a)
-=
-\frac{1}{\widehat H_a}
-\sum_i
-\frac{\mathbb{1}(S_i=1,R_i=1,C_i=0,A_i=a)}
-     {\widehat o_a(L_i)}
-\left\{Y_i-\widehat\mu_a(L_i)\right\}
-+
-\frac{1}{W_{\mathrm{aux}}}
-\sum_i
-\mathbb{1}(S_i=0)\omega_i\widehat\mu_a(L_i).
-$$
-
-The second term standardizes predicted outcomes over the auxiliary
-sample; the first term uses weighted trial residuals to correct
-outcome-model error. Under the identification and regularity conditions
-in the accompanying work, this construction is doubly robust:
-consistency requires a correct outcome model or a correct joint
-selection model, rather than necessarily both.
-
-The reported causal contrasts are
-
-$$
-\mathrm{RD}=\eta(1)-\eta(0),
-\qquad
-\mathrm{RR}=\frac{\eta(1)}{\eta(0)}.
-$$
-
-The package estimates the covariance of $\widehat\eta(0)$ and
-$\widehat\eta(1)$ from their empirical influence-function contributions
-and uses the delta method for the risk-difference and risk-ratio
-standard errors.
-
-## Package workflow
-
-``` mermaid
-flowchart LR
-    DATA["Import trial and auxiliary data"] --> SPLIT["Outer cross-fitting folds"]
-    SPLIT --> FIT["Held-out nuisance predictions"]
-    CONTROL["popart_control()"] --> SPLIT
-    FIT --> OBJECT["popart_fit object"]
-    OBJECT --> RESULTS["summary(), coef(),<br/>vcov(), confint()"]
-    OBJECT --> DIAG["timing and diagnostics"]
-```
-
-## Main functions
-
-| Function                                     | Purpose                                                                                  |
-|----------------------------------------------|------------------------------------------------------------------------------------------|
-| `fit_popart()`                               | Fit the trial-only and trial-plus-auxiliary analyses                                     |
-| `popart_control()`                           | Select nuisance learners and set tuning, random seeds, worker counts, and memory options |
-| `summary()`, `coef()`, `vcov()`, `confint()` | Inspect estimates and uncertainty                                                        |
-| `as.data.frame()`                            | Return the complete results table                                                        |
+Causal interpretation requires cluster randomization, positivity, sufficient
+measured covariates for response and censoring, and a representative auxiliary
+sample or valid auxiliary sampling weights.
 
 ## Installation
 
-From a cloned source checkout, run this in R from the repository root:
+Run these commands from the `PopART_full` folder:
 
-``` r
+```r
+install.packages(c("hal9001", "numDeriv", "data.table"))
 install.packages(".", repos = NULL, type = "source")
+library(popart)
 ```
 
-`popart` requires R 4.1 or later. Package dependencies are listed in
-[`DESCRIPTION`](DESCRIPTION). The optional `xgboost` package is required
-only when at least one nuisance model selects the `"xgboost"` learner.
+The simulation scripts additionally use:
+
+```r
+install.packages(c(
+  "dplyr", "tidyr", "ggplot2", "ggh4x", "legendry", "pkgload"
+))
+```
 
 ## Quick start
 
-The repository includes fixed synthetic CSV files for this example. They
-are not installed as package data.
+Open `example/run_analysis.R` and click **Run**, or run:
 
-``` r
+```r
+source("example/run_analysis.R")
+```
+
+The script follows one short pipeline:
+
+```r
+library(data.table)
 library(popart)
 
-trial <- read.csv("simulation/data/example_trial.csv")
-auxiliary <- read.csv("simulation/data/example_auxiliary.csv")
+data <- fread("example/popart_example.csv", na.strings = "")
+trial <- as.data.frame(data[S == 1])
+auxiliary <- as.data.frame(data[S == 0])
 
 fit <- fit_popart(
   trial_data = trial,
   auxiliary_data = auxiliary,
-  outcome = "outcome",
-  treatment = "treatment",
-  response = "responded",
-  censoring = "censored",
-  covariates = c(
-    "baseline_risk",
-    "baseline_binary",
-    "baseline_score_1",
-    "baseline_score_2"
-  ),
-  auxiliary_weight = "survey_weight",
-  treatment_values = c(0, 1)
+  outcome = "Y",
+  treatment = "A",
+  response = "R",
+  censoring = "C",
+  cluster = "cluster",
+  covariates = c("X1", "X2", "W1", "W2")
 )
 
+print(fit)
 summary(fit)
-coef(fit, estimator = "trial_auxiliary")
-confint(fit, estimator = "trial_auxiliary")
 ```
 
-For an applied analysis, import the two data frames from a CSV,
-database, or another source and replace the example column names.
-`fit_popart()` accepts data frames rather than file paths.
+### Example data
 
-## Inputs
+The example contains 1,000,000 rows from 200 clusters: 500,000 trial rows and
+500,000 auxiliary rows. It is stored as one CSV and split by `S` before
+`fit_popart()` is called.
 
-| Input            | Required columns                                                                               |
-|------------------|------------------------------------------------------------------------------------------------|
-| `trial_data`     | Outcome, two-level treatment, response indicator, censoring indicator, and baseline covariates |
-| `auxiliary_data` | The same baseline covariates and an optional nonnegative sampling-weight column                |
+| Variable | Type and level | Example-data role |
+|---|---|---|
+| `id` | Integer; individual | Unique row identifier |
+| `cluster` | Integer; cluster | Identifies the 200 randomized clusters |
+| `S` | Binary; individual | `1` identifies trial rows; `0` identifies auxiliary rows |
+| `A` | Binary; cluster | Treatment assignment, constant within each cluster |
+| `R` | Binary; individual | Response indicator in trial rows; `NA` in auxiliary rows |
+| `C` | Binary; individual | Censoring indicator for trial respondents; otherwise `NA` |
+| `Y` | Binary; individual | Observed trial outcome; `NA` after nonresponse/censoring and in auxiliary rows |
+| `X1` | Continuous; cluster | Baseline covariate, constant within cluster |
+| `X2` | Binary; cluster | Baseline covariate, constant within cluster |
+| `W1` | Binary; individual | Individual-level baseline covariate |
+| `W2` | Continuous; individual | Individual-level baseline covariate |
 
-Outcome, response, and censoring variables must be binary. Response uses
-1 for responded and censoring uses 1 for censored. The outcome may be
-missing only when it is unobserved, and censoring may be missing for
-nonresponders. Covariates must be numeric or logical, finite,
-nonmissing, and present in both data frames.
+The example is already analysis-ready: it does not require dummy-variable
+creation, recoding, or an auxiliary weight.
 
-## Outputs
+The preview shows trial and auxiliary rows together. `NA` marks response,
+censoring, and outcome fields that are unavailable for that row.
 
-Every `popart_fit` object contains results labeled `trial_only` and
-`trial_auxiliary`. Each label includes the control-arm mean, treated-arm
-mean, risk difference, and risk ratio.
+![Trial and auxiliary rows from the example data](example/figures/example_data_structure.png)
 
-| Object component                            | Contents                                                                                    |
-|---------------------------------------------|---------------------------------------------------------------------------------------------|
-| `estimates`                                 | Point estimates, standard errors, and confidence limits                                     |
-| `variance`, `covariance`, `full_covariance` | Variance and covariance results                                                             |
-| `fit_diagnostics`                           | Outer-fold labels, learner names, fit sizes, tuning values, timings, and worker process IDs |
-| `diagnostics`                               | Sample and outer-fold sizes, prediction ranges, weight scaling, and messages                |
-| `nuisance_fits`                             | HAL or XGBoost objects grouped by outer fold when explicitly retained; otherwise `NULL`     |
-| `control`, `columns`, `call`                | Reproducibility information for the analysis                                                |
+### Example output
 
-## Computation controls
+`print(fit)` gives a concise comparison, while `summary(fit)` reports the
+parameter-level estimates, standard errors, and 95% confidence intervals.
+The upper table is the quick comparison and the lower table is the detailed
+inference output.
 
-``` r
-# CPU-aware default
-control <- popart_control()
+![PopART example estimates and confidence intervals](example/figures/example_output.png)
 
-# Explicit serial execution for a memory-constrained computer
-serial_control <- popart_control(n_fit_workers = 1L, n_cv_workers = 1L)
+## Important function, parameters, and algorithms
 
-# Use HAL for the outcome and censoring models, and XGBoost for Q0 and Q1.
-mixed_control <- popart_control(
-  nuisance_models = c(
-    outcome = "hal",
-    censoring = "hal",
-    selection_control = "xgboost",
-    selection_treated = "xgboost"
-  )
-)
-```
+### Main function
 
-| Control                 | Default     | Meaning                                                                                                         |
-|-------------------------|-------------|-----------------------------------------------------------------------------------------------------------------|
-| `crossfit_folds`        | `3L`        | Outer folds used to generate out-of-fold nuisance predictions; set to `1L` to disable                           |
-| `nuisance_models`       | all `"hal"` | Named learner assignment for outcome, censoring, Q0, and Q1; supports `"hal"` and `"xgboost"`                   |
-| `n_fit_workers`         | `"auto"`    | Complete nuisance fits that may run concurrently; automatic mode uses `max(1, min(4, available_cpu_slots - 2))` |
-| `n_cv_workers`          | `1L`        | Workers used across CV folds inside one HAL fit                                                                 |
-| `n_cv_folds`            | `3L`        | Cross-validation folds per HAL fit                                                                              |
-| `n_lambda_values`       | `50L`       | Lasso penalty values per HAL fit                                                                                |
-| `num_knots`             | `c(5L, 3L)` | HAL knot counts                                                                                                 |
-| `xgboost_nrounds`       | `100L`      | Boosting rounds for XGBoost fits                                                                                |
-| `xgboost_max_depth`     | `6L`        | Maximum XGBoost tree depth                                                                                      |
-| `xgboost_learning_rate` | `0.3`       | XGBoost learning rate                                                                                           |
-| `keep_nuisance_fits`    | `FALSE`     | Do not retain completed nuisance-model objects unless requested                                                 |
+Only one function is needed for a real-data analysis.
 
-Workers are R processes scheduled over the logical CPU slots available
-to R. Only one parallel level is used at a time: either complete fits or
-the CV folds inside a fit. With the default three-fold outer
-cross-fitting, one analysis queues 12 complete nuisance fits (four model
-types in each fold). Each HAL fit still uses the separate three-fold
-internal CV to choose its lasso penalty. XGBoost fits do not use this
-HAL CV; they use the explicit boosting settings above and one CPU thread
-per complete fit so that fit-level scheduling remains in control of
-total parallelism. The `selection_control` and `selection_treated`
-entries are the Q0 and Q1 models, respectively.
+| Function | Purpose | Output |
+|---|---|---|
+| `fit_popart()` | Fit Naive and Proposed G-formula, IPW, and AIPW estimators | `estimates`, `variance`, and `covariance` |
+| `print(fit)` | Display the six estimator/version combinations | `eta(0)`, `eta(1)`, `RD`, and `RR` |
+| `summary(fit)` | Display all parameter-level results | Estimate, standard error, and 95% CI |
 
-## Simulation
+### Parameters of `fit_popart()`
 
-The [`simulation/`](simulation/) directory is excluded from the
-installed package. It provides the research and teaching workflow used
-to generate data, run Monte Carlo experiments, save progress, and create
-reports. The repository-only plotting workflow also requires `legendry`
-for the nested sample-size axes used in the manuscript figures.
+| Parameter | Meaning | Default |
+|---|---|---|
+| `trial_data` | Trial observations | required |
+| `auxiliary_data` | Auxiliary target-population observations | required |
+| `outcome` | Binary outcome column | required |
+| `treatment` | Cluster-level treatment column | required |
+| `response` | Trial response indicator column | required |
+| `censoring` | Outcome-censoring indicator column | required |
+| `cluster` | Cluster identifier column | required |
+| `covariates` | Shared cluster- and individual-level baseline covariates | required |
+| `auxiliary_weight` | Optional auxiliary sampling-weight column | `NULL` |
+| `treatment_values` | Control and treatment values | `c(0, 1)` |
+| `treatment_probability` | Known probability of treatment assignment | `0.5` |
+| `n_cv_folds` | Number of HAL cross-validation folds | `5` |
+| `n_lambda_values` | Number of HAL lasso penalties | `50` |
+| `random_seed` | Seed used to create cluster-grouped HAL folds | `1` |
 
-| Location              | Contents                                                                                     |
-|-----------------------|----------------------------------------------------------------------------------------------|
-| `simulation/R/`       | Data generation, reference analysis, global scheduling, persistence, and reporting functions |
-| `simulation/data/`    | Fixed synthetic CSV files used by the quick start                                            |
-| `simulation/scripts/` | Command-line entry points for running and analyzing simulations                              |
-| `simulation/tests/`   | Formal-package versus reference-code equivalence check                                       |
-| `simulation/results/` | Ignored local caches, checkpoints, result tables, reports, and figures                       |
+### Returned results
 
-### Monte Carlo results (10,000 replicates)
+| Element | Contents |
+|---|---|
+| `fit$estimates` | Estimates, standard errors, and 95% confidence limits |
+| `fit$variance` | Estimated variance of each causal parameter |
+| `fit$covariance` | Covariance matrix of `eta(0)` and `eta(1)` for each estimator/version |
 
-<!--
-Insert the final Longleaf figures and a concise interpretation here. This
-README intentionally reads saved results; rendering it must not rerun the
-10,000-replicate simulation.
--->
+### Algorithms
 
-### Scheduler workflow
+| Component | Implementation |
+|---|---|
+| Outcome regression | One HAL model fitted among uncensored trial responders |
+| Censoring | One HAL model fitted among trial responders |
+| Sample selection | Separate control- and treatment-arm HAL models using trial and auxiliary covariates |
+| G-formula | Outcome predictions averaged over trial responders or the auxiliary target population |
+| IPW | Complete outcomes weighted by observation or sample-selection probabilities |
+| AIPW | Outcome regression combined with an inverse-probability correction |
+| Fit reuse | Four HAL nuisance fits are shared by all six estimator/version combinations |
+| Inference | Contributions are aggregated by cluster before covariance estimation |
 
-``` mermaid
-flowchart LR
-    GRID["Sample-size grid and MC seeds"] --> ACTIVE["Active MC runs"]
-    ACTIVE --> QUEUE["Global queue of HAL fits"]
-    QUEUE --> SLOTS["Available logical CPU slots"]
-    SLOTS --> EST["Completed run estimates"]
-    EST --> SAVE["Atomic checkpoints and result files"]
-    SAVE --> REPORT["Tables, report, and figures"]
-```
+| Version | Interpretation |
+|---|---|
+| Naive | Uses observed trial responders and ignores differential nonresponse |
+| Proposed | Uses auxiliary covariates to represent the target population |
 
-The scheduler uses one global HAL-fit limit across active replicates and
-sample size combinations. When a slot becomes free, it receives the next
-ready fit. By default, two detected logical CPU slots are reserved for
-the operating system, each HAL fit uses one CV worker, and cached or
-checkpointed work can be reused after an interrupted run.
+Each version reports `eta(0)`, `eta(1)`, `RD`, and `RR`, with standard errors
+and 95% confidence intervals.
 
-### Run a Monte Carlo study
+## Simulation 1: parametric model specification
 
-Run these commands from the repository root:
+### Purpose
 
-``` sh
-# Inspect the planned resource allocation without fitting models.
-Rscript simulation/scripts/run_monte_carlo.R --n-trial 200,500 --n-auxiliary 200,500 --replicates 20 --dry-run
+Simulation 1 compares Naive and Proposed G-formula, IPW, and AIPW estimators
+when the parametric outcome and selection models are correctly specified or
+misspecified.
 
-# Run the study and write results, a report, and figures.
-Rscript simulation/scripts/run_monte_carlo.R --n-trial 200,500 --n-auxiliary 200,500 --replicates 20 --run-id local_mc20
+### DGP and settings
 
-# Recreate the report and figures from saved results.
-Rscript simulation/scripts/analyze_results.R --run-id local_mc20
+| Component | Setting |
+|---|---|
+| Clusters | 20; half assigned to control and half to treatment |
+| Trial sizes | 500 and 5000 |
+| Auxiliary sizes | 500 and 5000 |
+| Monte Carlo replicates | 20 per sample-size combination |
+| Cluster covariate | `X1`: fixed cluster-level risk |
+| Individual covariates | `W1 ~ Bernoulli(0.5)` in trial; `W1 ~ Bernoulli(0.75)` in auxiliary; `W2 ~ Normal(0,1)` |
+| Response | Binary; depends on the treatment-by-`W1` interaction; marginal rate 0.5 |
+| Censoring | Binary; depends on treatment and `W1`; rate among responders 0.3 |
+| Control outcome | `logit P(Y(0)=1) = -1 + 2W1 + 0.5W2 + 0.25X1` |
+| Treated outcome | `logit P(Y(1)=1) = -W1 - 0.5W2` |
 
-# Compare the installed API with the preserved reference implementation.
-Rscript simulation/tests/formal_api_equivalence.R
-```
+| Scenario | Correct model | Misspecified model |
+|---|---|---|
+| Outcome `mu` | Includes `X1`, `W1`, `W2`, treatment, and treatment interactions | Omits `W1` and its treatment interaction |
+| Selection/censoring `pi` | Includes `X1`, `W1`, and `W2` | Omits `W1` |
 
-Use `--help` to list all Monte Carlo options, including explicit CPU
-limits, CV settings, cache locations, resume behavior, and output
-directories.
+### Generated data structure
 
-## Documentation
+Each replicate creates one trial sample and one auxiliary sample and combines
+them into one internal data frame.
 
--   Open the installed tutorial with
-    `vignette("getting-started", package = "popart")`.
--   Read the source version at
-    [`vignettes/getting-started.Rmd`](vignettes/getting-started.Rmd).
--   See [`man/fit_popart.Rd`](man/fit_popart.Rd) and
-    [`man/popart_control.Rd`](man/popart_control.Rd) for the complete
-    API.
+| Variable | Level | Trial rows (`S = 1`) | Auxiliary rows (`S = 0`) |
+|---|---|---|---|
+| `id` | Individual | Trial observation identifier | Auxiliary observation identifier |
+| `cluster` | Cluster | Randomization unit | Corresponding target-population cluster |
+| `X1` | Cluster | Fixed cluster risk | Same cluster risk |
+| `W1` | Individual | Bernoulli with probability 0.50 | Bernoulli with probability 0.75 |
+| `W2` | Individual | Standard normal | Standard normal |
+| `A` | Cluster | Randomized treatment, constant within cluster | Retained only for the combined internal table |
+| `R` | Individual | Generated response indicator | `0` placeholder |
+| `C` | Individual | Generated censoring indicator | `0` placeholder |
+| `Y` | Individual | Observed binary outcome; `0` placeholder when unobserved | `0` placeholder |
+| `wt` | Individual | `1` | Auxiliary sampling weight determined by `W1` |
+| `S` | Individual | `1` | `0` |
+
+The auxiliary `R`, `C`, and `Y` values are placeholders and are not treated as
+observed outcomes. The estimators use `S` to distinguish the two samples.
+
+### Analysis pipeline
+
+1. Generate one trial and one auxiliary sample.
+2. Fit six estimators under four `mu`/`pi` specification scenarios.
+3. Repeat for all four sample-size combinations.
+4. Summarize bias, empirical variance, estimated variance, MSE, and 95% CI coverage.
+5. Save the result table and three figures.
+
+### Current results
+
+The current 20-replicate run contains 1,920 estimator rows. It verifies the
+complete pipeline but is not a final Monte Carlo study.
+
+**RD estimates.** The boxplots show the Monte Carlo distribution of estimated
+risk differences. The dashed line is the true RD; gray panels mark scenarios
+in which the corresponding estimator is not expected to be consistent.
+
+![Simulation 1 estimates](simulation/sim_figures/sim1/simulation1_parametric_mc20_estimates.png)
+
+**Variance calibration.** Each point compares empirical variance with average
+estimated variance. Points close to the dashed diagonal indicate agreement.
+
+![Simulation 1 variance](simulation/sim_figures/sim1/simulation1_parametric_mc20_variance.png)
+
+**Confidence-interval coverage.** Points show empirical coverage for
+`eta(0)`, `eta(1)`, RD, and RR; the dashed line marks the nominal 95% level.
+
+![Simulation 1 confidence interval coverage](simulation/sim_figures/sim1/simulation1_parametric_mc20_confidence.png)
+
+### Reproduction
+
+Open `simulation/sim_scripts/ss1.R` and click **Run**. The script generates the
+data, fits the estimators, summarizes the results, and writes all outputs.
+
+| Output | Location |
+|---|---|
+| Result table | `simulation/sim_data/sim1/` |
+| Figures | `simulation/sim_figures/sim1/` |
+
+## Simulation 2: HAL AIPW with the global scheduler
+
+### Purpose
+
+Simulation 2 compares Naive and Proposed AIPW estimators when nonlinear
+response, censoring, and outcome functions are learned with HAL. It also tests
+the global scheduler used to distribute HAL fits across Monte Carlo replicates.
+
+### DGP and settings
+
+| Component | Setting |
+|---|---|
+| Clusters | 20; half assigned to control and half to treatment |
+| Trial sizes | 500 and 5000 |
+| Auxiliary sizes | 500 and 5000 |
+| Monte Carlo replicates | 20 per sample-size combination |
+| Cluster covariate | `X1`: fixed cluster-level risk |
+| Individual covariates | `W1` binary; `W2` and `W3` standard normal |
+| Response | Nonlinear in treatment, `W1`, `W2`, and `W3`; marginal rate 0.5 |
+| Censoring | Nonlinear in treatment, `W1`, `W2`, and `W3`; rate among responders 0.3 |
+| Control outcome | Nonlinear risk depending on `W1` |
+| Treated outcome | Nonlinear risk depending on `W1`, `sin(W2)`, `W3^2`, and `X1` |
+| Estimators | Naive HAL AIPW and Proposed HAL AIPW |
+
+### Generated data structure
+
+Each replicate uses the same trial/auxiliary layout as Simulation 1, with an
+additional nonlinear individual covariate `W3`.
+
+| Variable | Level | Trial rows (`S = 1`) | Auxiliary rows (`S = 0`) |
+|---|---|---|---|
+| `id` | Individual | Trial observation identifier | Auxiliary observation identifier |
+| `cluster` | Cluster | Randomization unit | Corresponding target-population cluster |
+| `X1` | Cluster | Fixed cluster risk | Same cluster risk |
+| `W1` | Individual | Bernoulli with probability 0.50 | Bernoulli with probability 0.75 |
+| `W2`, `W3` | Individual | Independent standard normal covariates | Independent standard normal covariates |
+| `A` | Cluster | Randomized treatment, constant within cluster | `0` placeholder |
+| `R` | Individual | Nonlinear response indicator | `0` placeholder |
+| `C` | Individual | Nonlinear censoring indicator | `0` placeholder |
+| `Y` | Individual | Observed binary outcome; `0` placeholder when unobserved | `0` placeholder |
+| `wt` | Individual | `1` | Mean-one auxiliary sampling weight determined by `W1` |
+| `S` | Individual | `1` | `0` |
+
+Again, auxiliary `A`, `R`, `C`, and `Y` are internal placeholders rather than
+observed auxiliary variables. HAL is fitted with `X1`, `W1`, `W2`, and `W3`.
+
+### Global scheduler
+
+| Step | Operation |
+|---|---|
+| CPU detection | `global_fit_slots = detectCores(logical = TRUE) - 2` |
+| Active replicates | `ceiling(global_fit_slots / 2)` |
+| HAL jobs | Four shared fits per replicate |
+| Parallelization | One global worker pool; no nested HAL backend |
+| Memory control | Replicates are prepared and fitted in batches |
+
+### Analysis pipeline
+
+1. Generate nonlinear trial and auxiliary data.
+2. Prepare four HAL jobs for each active replicate.
+3. Fit all jobs through the global worker pool.
+4. Reuse the fits for Naive and Proposed AIPW.
+5. Summarize RD estimates, empirical and estimated variances, and 95% CI coverage.
+6. Save the result table and three figures.
+
+### Current results
+
+The current 20-replicate run contains 160 estimator rows. It verifies the HAL
+and scheduling pipeline but is not a final Monte Carlo study.
+
+**RD estimates.** The boxplots compare Naive and Proposed HAL AIPW across the
+four sample-size combinations. The dashed line is the true RD.
+
+![Simulation 2 estimates](simulation/sim_figures/sim2/monte_carlo_hal_aipw_mc20_estimates.png)
+
+**Variance calibration.** Each point compares empirical variance with average
+estimated variance for the four causal parameters. The dashed diagonal marks
+perfect agreement.
+
+![Simulation 2 variance](simulation/sim_figures/sim2/monte_carlo_hal_aipw_mc20_variance.png)
+
+**Confidence-interval coverage.** Points show empirical 95% CI coverage by
+sample size and parameter; the dashed line marks the nominal 0.95 level.
+
+![Simulation 2 confidence interval coverage](simulation/sim_figures/sim2/monte_carlo_hal_aipw_mc20_confidence.png)
+
+### Reproduction
+
+Open `simulation/sim_scripts/ss2.R` and click **Run**. CPU allocation, HAL
+fitting, result summaries, and figure generation are handled by the script.
+
+| Output | Location |
+|---|---|
+| Result table | `simulation/sim_data/sim2/` |
+| Figures | `simulation/sim_figures/sim2/` |
 
 ## References
 
-<!-- References will be added after publication. -->
-
-## License
-
-The current [`LICENSE`](LICENSE) is a source-availability notice, not a
-public redistribution license. Confirm the upstream research-code terms
-before public release or redistribution.
+<!-- References will be added later. -->

@@ -1,36 +1,35 @@
 Package: popart
 Type: Package
 Title: Population-Augmented Analysis of Randomized Trials
-Version: 0.2.0
+Version: 0.1.0
 Authors@R: person(
-    given = "Zhitan",
-    family = "He",
-    email = "zhitanhe21@users.noreply.github.com",
+    given = "PopART",
+    family = "Team",
+    email = "popart.package@example.com",
     role = c("aut", "cre")
   )
-Description: Fits augmented inverse probability weighting estimators to a
-    randomized-trial sample and an auxiliary target-population sample. Highly
-    adaptive lasso or extreme gradient boosting nuisance regressions with outer
-    cross-fitting are used to estimate trial selection, outcome, and censoring
-    mechanisms. The main interface accepts user-supplied
-    data frames and returns arm means, treatment contrasts, covariance
-    estimates, Wald confidence intervals, and fit diagnostics.
-License: file LICENSE
+Author: PopART Team [aut, cre]
+Maintainer: PopART Team <popart.package@example.com>
+Description: Fits g-formula, inverse probability weighted, and augmented
+    inverse probability weighted estimators using randomized-trial and
+    auxiliary target-population samples. Highly adaptive lasso models estimate
+    the shared nuisance functions.
+License: MIT + file LICENSE
 Encoding: UTF-8
 Depends:
     R (>= 4.1.0)
 Imports:
-    doParallel,
-    foreach,
     hal9001 (>= 0.4.6),
-    parallel,
-    parallelly,
-    stats,
-    utils
+    numDeriv,
+    stats
 Suggests:
-    knitr,
-    rmarkdown,
-    xgboost
-VignetteBuilder: knitr, rmarkdown
+    dplyr,
+    ggh4x,
+    ggplot2,
+    legendry,
+    pkgload,
+    tidyr,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3

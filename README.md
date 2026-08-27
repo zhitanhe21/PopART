@@ -1,8 +1,6 @@
 # popart: Causal Inference for Cluster-Randomized Trials with Differential Nonresponse
 
-## Background and data structure
-
-### Background
+## Background
 
 `popart` estimates population-level causal effects from a cluster-randomized
 trial with differential individual nonresponse and outcome censoring.
@@ -28,7 +26,7 @@ For binary outcomes, the causal targets are:
 | `RD` | `eta(1) - eta(0)` | Causal risk difference |
 | `RR` | `eta(1) / eta(0)` | Causal risk ratio |
 
-### Data structure
+## Data structure
 
 The package receives trial and auxiliary data frames separately. The example
 CSV uses `S` to identify the two samples before splitting them.
@@ -56,18 +54,9 @@ sample or valid auxiliary sampling weights.
 
 ### Auxiliary sampling weights
 
-`auxiliary_weight` is optional. It should name a weight column supplied with
-the auxiliary survey; the package does not estimate or invent these weights.
-
-| Auxiliary data | Setting |
-|---|---|
-| Simple random sample or complete target-population data | Leave `auxiliary_weight = NULL` |
-| Survey data with a sampling-weight column | Set `auxiliary_weight` to that column name |
-| Sampling mechanism unknown and no weights supplied | Leave it `NULL`; do not create arbitrary weights |
-
-When weights are supplied, they are used in the Proposed estimators to make the
-auxiliary sample represent its target population. The example is treated as an
-equally weighted auxiliary sample and therefore has no weight column.
+If the auxiliary survey supplies sampling weights, pass that column through
+`auxiliary_weight`. Otherwise leave it as `NULL`; the package does not estimate
+or invent sampling weights.
 
 ## Installation
 
@@ -95,7 +84,7 @@ Open `example/run_analysis.R` and click **Run**, or run:
 source("example/run_analysis.R")
 ```
 
-The script follows one short pipeline:
+The complete analysis is:
 
 ```r
 library(data.table)
@@ -123,28 +112,9 @@ summary(fit)
 ### Example data
 
 The example contains 1,000,000 rows from 200 clusters: 500,000 trial rows and
-500,000 auxiliary rows. It is stored as one CSV and split by `S` before
-`fit_popart()` is called.
-
-| Variable | Type and level | Example-data role |
-|---|---|---|
-| `id` | Integer; individual | Unique row identifier |
-| `cluster` | Integer; cluster | Identifies the 200 randomized clusters |
-| `S` | Binary; individual | `1` identifies trial rows; `0` identifies auxiliary rows |
-| `A` | Binary; cluster | Treatment assignment, constant within each cluster |
-| `R` | Binary; individual | Response indicator in trial rows; `NA` in auxiliary rows |
-| `C` | Binary; individual | Censoring indicator for trial respondents; otherwise `NA` |
-| `Y` | Binary; individual | Observed trial outcome; `NA` after nonresponse/censoring and in auxiliary rows |
-| `X1` | Continuous; cluster | Baseline covariate, constant within cluster |
-| `X2` | Binary; cluster | Baseline covariate, constant within cluster |
-| `W1` | Binary; individual | Individual-level baseline covariate |
-| `W2` | Continuous; individual | Individual-level baseline covariate |
-
-The example is already analysis-ready: it does not require dummy-variable
-creation, recoding, or an auxiliary weight.
-
-The preview shows trial and auxiliary rows together. `NA` marks response,
-censoring, and outcome fields that are unavailable for that row.
+500,000 auxiliary rows. It is analysis-ready and is split by `S` before
+`fit_popart()` is called. `NA` marks unavailable response, censoring, and
+outcome fields.
 
 ![Trial and auxiliary rows from the example data](example/figures/example_data_structure.png)
 
@@ -157,9 +127,7 @@ inference output.
 
 ![PopART example estimates and confidence intervals](example/figures/example_output.png)
 
-## Important function, parameters, and algorithms
-
-### Main function
+## Main function and parameters
 
 Only one function is needed for a real-data analysis.
 
@@ -186,14 +154,6 @@ Only one function is needed for a real-data analysis.
 | `n_cv_folds` | Number of HAL cross-validation folds | `5` |
 | `n_lambda_values` | Number of HAL lasso penalties | `50` |
 | `random_seed` | Seed used to create cluster-grouped HAL folds | `1` |
-
-### Returned results
-
-| Element | Contents |
-|---|---|
-| `fit$estimates` | Estimates, standard errors, and 95% confidence limits |
-| `fit$variance` | Estimated variance of each causal parameter |
-| `fit$covariance` | Covariance matrix of `eta(0)` and `eta(1)` for each estimator/version |
 
 ## Simulation 1: parametric model specification
 
@@ -223,32 +183,11 @@ misspecified.
 | Outcome `mu` | Includes `X1`, `W1`, `W2`, treatment, and treatment interactions | Omits `W1` and its treatment interaction |
 | Selection/censoring `pi` | Includes `X1`, `W1`, and `W2` | Omits `W1` |
 
-### Generated data structure
-
-Each replicate creates one trial sample and one auxiliary sample and combines
-them into one internal data frame.
-
-| Variable | Level | Trial rows (`S = 1`) | Auxiliary rows (`S = 0`) |
-|---|---|---|---|
-| `id` | Individual | Trial observation identifier | Auxiliary observation identifier |
-| `cluster` | Cluster | Randomization unit | Corresponding target-population cluster |
-| `X1` | Cluster | Fixed cluster risk | Same cluster risk |
-| `W1` | Individual | Bernoulli with probability 0.50 | Bernoulli with probability 0.75 |
-| `W2` | Individual | Standard normal | Standard normal |
-| `A` | Cluster | Randomized treatment, constant within cluster | Retained only for the combined internal table |
-| `R` | Individual | Generated response indicator | `0` placeholder |
-| `C` | Individual | Generated censoring indicator | `0` placeholder |
-| `Y` | Individual | Observed binary outcome; `0` placeholder when unobserved | `0` placeholder |
-| `wt` | Individual | `1` | Auxiliary sampling weight determined by `W1` |
-| `S` | Individual | `1` | `0` |
-
-The auxiliary `R`, `C`, and `Y` values are placeholders and are not treated as
-observed outcomes. The estimators use `S` to distinguish the two samples.
+Each replicate combines trial rows (`S = 1`) with auxiliary covariate rows
+(`S = 0`). Auxiliary `R`, `C`, and `Y` values are internal placeholders and
+are not treated as observed outcomes.
 
 ### Current results
-
-The current 20-replicate run contains 1,920 estimator rows. It verifies the
-complete pipeline but is not a final Monte Carlo study.
 
 **RD estimates.** The boxplots show the Monte Carlo distribution of estimated
 risk differences. The dashed line is the true RD; gray panels mark scenarios
@@ -269,12 +208,9 @@ estimated variance. Points close to the dashed diagonal indicate agreement.
 ### Reproduction
 
 Open `simulation/sim_scripts/ss1.R` and click **Run**. The script generates the
-data, fits the estimators, summarizes the results, and writes all outputs.
-
-| Output | Location |
-|---|---|
-| Result table | `simulation/sim_data/sim1/` |
-| Figures | `simulation/sim_figures/sim1/` |
+data, fits the estimators, and writes the result table to
+`simulation/sim_data/sim1/` and the figures to
+`simulation/sim_figures/sim1/`.
 
 ## Simulation 2: HAL AIPW with the global scheduler
 
@@ -300,42 +236,15 @@ the global scheduler used to distribute HAL fits across Monte Carlo replicates.
 | Treated outcome | Nonlinear risk depending on `W1`, `sin(W2)`, `W3^2`, and `X1` |
 | Estimators | Naive HAL AIPW and Proposed HAL AIPW |
 
-### Generated data structure
-
-Each replicate uses the same trial/auxiliary layout as Simulation 1, with an
-additional nonlinear individual covariate `W3`.
-
-| Variable | Level | Trial rows (`S = 1`) | Auxiliary rows (`S = 0`) |
-|---|---|---|---|
-| `id` | Individual | Trial observation identifier | Auxiliary observation identifier |
-| `cluster` | Cluster | Randomization unit | Corresponding target-population cluster |
-| `X1` | Cluster | Fixed cluster risk | Same cluster risk |
-| `W1` | Individual | Bernoulli with probability 0.50 | Bernoulli with probability 0.75 |
-| `W2`, `W3` | Individual | Independent standard normal covariates | Independent standard normal covariates |
-| `A` | Cluster | Randomized treatment, constant within cluster | `0` placeholder |
-| `R` | Individual | Nonlinear response indicator | `0` placeholder |
-| `C` | Individual | Nonlinear censoring indicator | `0` placeholder |
-| `Y` | Individual | Observed binary outcome; `0` placeholder when unobserved | `0` placeholder |
-| `wt` | Individual | `1` | Mean-one auxiliary sampling weight determined by `W1` |
-| `S` | Individual | `1` | `0` |
-
-Again, auxiliary `A`, `R`, `C`, and `Y` are internal placeholders rather than
-observed auxiliary variables. HAL is fitted with `X1`, `W1`, `W2`, and `W3`.
+Simulation 2 uses the same trial/auxiliary layout as Simulation 1, adds `W3`,
+and fits HAL with `X1`, `W1`, `W2`, and `W3`.
 
 ### Global scheduler
 
-| Step | Operation |
-|---|---|
-| CPU detection | `global_fit_slots = detectCores(logical = TRUE) - 2` |
-| Active replicates | `ceiling(global_fit_slots / 2)` |
-| HAL jobs | Four shared fits per replicate |
-| Parallelization | One global worker pool; no nested HAL backend |
-| Memory control | Replicates are prepared and fitted in batches |
+Simulation 2 automatically uses `detectCores(logical = TRUE) - 2` workers in
+one global pool and processes Monte Carlo replicates in batches.
 
 ### Current results
-
-The current 20-replicate run contains 160 estimator rows. It verifies the HAL
-and scheduling pipeline but is not a final Monte Carlo study.
 
 **RD estimates.** The boxplots compare Naive and Proposed HAL AIPW across the
 four sample-size combinations. The dashed line is the true RD.
@@ -356,13 +265,5 @@ sample size and parameter; the dashed line marks the nominal 0.95 level.
 ### Reproduction
 
 Open `simulation/sim_scripts/ss2.R` and click **Run**. CPU allocation, HAL
-fitting, result summaries, and figure generation are handled by the script.
-
-| Output | Location |
-|---|---|
-| Result table | `simulation/sim_data/sim2/` |
-| Figures | `simulation/sim_figures/sim2/` |
-
-## References
-
-<!-- References will be added later. -->
+fitting, and output generation are handled by the script. Results are written
+to `simulation/sim_data/sim2/` and figures to `simulation/sim_figures/sim2/`.

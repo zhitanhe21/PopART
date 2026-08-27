@@ -1,4 +1,4 @@
-# popart: Causal Inference for Cluster-Randomized Trials with Differential Nonresponse
+# Causal Inference for Cluster-Randomized Trials with Differential Nonresponse
 
 ## Background
 

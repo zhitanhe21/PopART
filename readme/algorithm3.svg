@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="640" viewBox="0 0 1400 640" role="img" aria-labelledby="title desc">
   <title id="title">Algorithm 3: Simulation 2 Monte Carlo study</title>
   <desc id="desc">Pseudocode for the HAL Monte Carlo study with global scheduling.</desc>
@@ -22,7 +23,7 @@
       <text x="88" y="241"><tspan font-weight="700">for</tspan><tspan> each sample-size combination </tspan><tspan font-weight="700">do</tspan></text>
       <text x="126" y="280"><tspan font-weight="700">for</tspan><tspan> each batch of active Monte Carlo replicates </tspan><tspan font-weight="700">do</tspan></text>
       <text x="164" y="319"><tspan font-weight="700">Generate</tspan><tspan> nonlinear trial and auxiliary samples for each replicate.</tspan></text>
-      <text x="164" y="358"><tspan font-weight="700">Prepare</tspan><tspan> four HAL jobs per replicate: 渭虃, 蟺虃</tspan><tspan baseline-shift="sub" font-size="15">C</tspan><tspan>, q虃</tspan><tspan baseline-shift="sub" font-size="15">0</tspan><tspan>, and q虃</tspan><tspan baseline-shift="sub" font-size="15">1</tspan><tspan>.</tspan></text>
+      <text x="164" y="358"><tspan font-weight="700">Prepare</tspan><tspan> four HAL jobs per replicate: &#x03BC;&#x0302;, &#x03C0;&#x0302;</tspan><tspan baseline-shift="sub" font-size="15">C</tspan><tspan>, q&#x0302;</tspan><tspan baseline-shift="sub" font-size="15">0</tspan><tspan>, and q&#x0302;</tspan><tspan baseline-shift="sub" font-size="15">1</tspan><tspan>.</tspan></text>
       <text x="164" y="397"><tspan font-weight="700">Dispatch</tspan><tspan> all HAL jobs through the global worker pool.</tspan></text>
       <text x="164" y="436"><tspan font-weight="700">Reuse</tspan><tspan> the four fitted models for Naive and Proposed AIPW.</tspan></text>
       <text x="164" y="475"><tspan font-weight="700">Store</tspan><tspan> RD estimates and estimated variances.</tspan></text>

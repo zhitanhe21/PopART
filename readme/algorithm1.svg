@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="600" viewBox="0 0 1400 600" role="img" aria-labelledby="title desc">
   <title id="title">Algorithm 1: PopART estimation</title>
   <desc id="desc">Pseudocode for fitting the PopART estimators.</desc>
@@ -18,16 +19,16 @@
         <text x="68" y="436">7:</text><text x="68" y="475">8:</text><text x="68" y="514">9:</text>
         <text x="68" y="553">10:</text>
       </g>
-      <text x="88" y="202"><tspan font-weight="700">Fit</tspan><tspan> outcome regression 渭虃(A,V) among S = 1, R = 1, C = 0.</tspan></text>
-      <text x="88" y="241"><tspan font-weight="700">Fit</tspan><tspan> censoring model 蟺虃</tspan><tspan baseline-shift="sub" font-size="15">C</tspan><tspan>(V) among S = 1, R = 1.</tspan></text>
-      <text x="88" y="280"><tspan font-weight="700">for</tspan><tspan> treatment arm a 鈭?{0,1} </tspan><tspan font-weight="700">do</tspan></text>
-      <text x="126" y="319"><tspan font-weight="700">Fit</tspan><tspan> selection model q虃</tspan><tspan baseline-shift="sub" font-size="15">a</tspan><tspan>(V) using observed trial outcomes in arm a and D</tspan><tspan baseline-shift="sub" font-size="15">aux</tspan><tspan>.</tspan></text>
+      <text x="88" y="202"><tspan font-weight="700">Fit</tspan><tspan> outcome regression &#x03BC;&#x0302;(A,V) among S = 1, R = 1, C = 0.</tspan></text>
+      <text x="88" y="241"><tspan font-weight="700">Fit</tspan><tspan> censoring model &#x03C0;&#x0302;</tspan><tspan baseline-shift="sub" font-size="15">C</tspan><tspan>(V) among S = 1, R = 1.</tspan></text>
+      <text x="88" y="280"><tspan font-weight="700">for</tspan><tspan> treatment arm a &#x2208; {0,1} </tspan><tspan font-weight="700">do</tspan></text>
+      <text x="126" y="319"><tspan font-weight="700">Fit</tspan><tspan> selection model q&#x0302;</tspan><tspan baseline-shift="sub" font-size="15">a</tspan><tspan>(V) using observed trial outcomes in arm a and D</tspan><tspan baseline-shift="sub" font-size="15">aux</tspan><tspan>.</tspan></text>
       <text x="88" y="358" font-weight="700">end for</text>
-      <text x="88" y="397"><tspan font-weight="700">Reuse</tspan><tspan> {渭虃, 蟺虃</tspan><tspan baseline-shift="sub" font-size="15">C</tspan><tspan>, q虃</tspan><tspan baseline-shift="sub" font-size="15">0</tspan><tspan>, q虃</tspan><tspan baseline-shift="sub" font-size="15">1</tspan><tspan>} to compute G-formula, IPW, and AIPW.</tspan></text>
+      <text x="88" y="397"><tspan font-weight="700">Reuse</tspan><tspan> {&#x03BC;&#x0302;, &#x03C0;&#x0302;</tspan><tspan baseline-shift="sub" font-size="15">C</tspan><tspan>, q&#x0302;</tspan><tspan baseline-shift="sub" font-size="15">0</tspan><tspan>, q&#x0302;</tspan><tspan baseline-shift="sub" font-size="15">1</tspan><tspan>} to compute G-formula, IPW, and AIPW.</tspan></text>
       <text x="88" y="436"><tspan font-weight="700">Compute</tspan><tspan> Naive estimates from trial responders.</tspan></text>
       <text x="88" y="475"><tspan font-weight="700">Compute</tspan><tspan> Proposed estimates over the weighted auxiliary target population.</tspan></text>
       <text x="88" y="514"><tspan font-weight="700">Aggregate</tspan><tspan> estimating-function contributions by cluster and estimate covariance.</tspan></text>
-      <text x="88" y="553"><tspan font-weight="700">Return</tspan><tspan> 畏虃(0), 畏虃(1), RD, RR, standard errors, and 95% confidence intervals.</tspan></text>
+      <text x="88" y="553"><tspan font-weight="700">Return</tspan><tspan> &#x03B7;&#x0302;(0), &#x03B7;&#x0302;(1), RD, RR, standard errors, and 95% confidence intervals.</tspan></text>
     </g>
     <line x1="24" y1="578" x2="1376" y2="578" stroke="#111111" stroke-width="2"/>
   </g>

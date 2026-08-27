@@ -19,9 +19,6 @@
 #'   sample-membership formula for the proposed estimator.
 #' @param version A character string equal to \code{"naive"} or
 #'   \code{"proposed"}.
-#' @param treatment_probability A numeric value giving the known marginal
-#'   treatment probability.
-#'
 #' @return A one-row data frame containing:
 #' \itemize{
 #'   \item{\code{etahat_0}: estimated mean potential outcome under control;}
@@ -33,13 +30,11 @@
 #' @keywords internal
 fit_aipw <- function(
     data, outcome_formula, weight_formula,
-    version = c("naive", "proposed"), treatment_probability = 0.5) {
+    version = c("naive", "proposed")) {
   version <- match.arg(version)
   if (version == "naive") {
     data <- data[data$S == 1L & data$R == 1L, ]
-    return(.fit_aipw_naive(
-      data, outcome_formula, weight_formula, treatment_probability
-    ))
+    return(.fit_aipw_naive(data, outcome_formula, weight_formula))
   }
   .fit_aipw_proposed(data, outcome_formula, weight_formula)
 }
@@ -53,14 +48,12 @@ fit_aipw <- function(
 #'   \code{C_fmla}.
 #' @param mu_fmla A logistic outcome-regression formula.
 #' @param C_fmla A logistic censoring-model formula.
-#' @param pA A numeric value giving the known marginal treatment probability.
-#'
 #' @return A one-row data frame containing \code{etahat_0}, \code{etahat_1},
 #'   \code{cov_00}, \code{cov_01}, and \code{cov_11}.
 #'
 #' @keywords internal
 #' @noRd
-.fit_aipw_naive <- function(dat, mu_fmla, C_fmla, pA = 0.5) {
+.fit_aipw_naive <- function(dat, mu_fmla, C_fmla) {
   n <- nrow(dat)
   observed0 <- dat$C == 0L & dat$A == 0L
   observed1 <- dat$C == 0L & dat$A == 1L
@@ -76,12 +69,11 @@ fit_aipw <- function(
   design0 <- stats::model.matrix(mu_fmla, dat0)
   design1 <- stats::model.matrix(mu_fmla, dat1)
   design_c <- stats::model.matrix(C_fmla, dat)
-  pi_a <- ifelse(dat$A == 1L, pA, 1 - pA)
 
   calculate <- function(beta_mu, beta_c) {
     mu0 <- stats::plogis(as.vector(design0 %*% beta_mu))
     mu1 <- stats::plogis(as.vector(design1 %*% beta_mu))
-    pi <- pi_a * (1 - stats::plogis(as.vector(design_c %*% beta_c)))
+    pi <- 1 - stats::plogis(as.vector(design_c %*% beta_c))
     h0 <- sum(1 / pi[observed0])
     h1 <- sum(1 / pi[observed1])
     phi0 <- mu0

@@ -19,9 +19,6 @@
 #'   sample-membership formula for the proposed estimator.
 #' @param version A character string equal to \code{"naive"} or
 #'   \code{"proposed"}.
-#' @param treatment_probability A numeric value giving the known treatment
-#'   probability.
-#'
 #' @return A one-row data frame containing:
 #' \itemize{
 #'   \item{\code{etahat_0}: estimated mean potential outcome under control;}
@@ -32,12 +29,11 @@
 #'
 #' @keywords internal
 fit_ipw <- function(
-    data, weight_formula, version = c("naive", "proposed"),
-    treatment_probability = 0.5) {
+    data, weight_formula, version = c("naive", "proposed")) {
   version <- match.arg(version)
   if (version == "naive") {
     data <- data[data$S == 1L & data$R == 1L, ]
-    return(.fit_ipw_naive(data, weight_formula, treatment_probability))
+    return(.fit_ipw_naive(data, weight_formula))
   }
   .fit_ipw_proposed(data, weight_formula)
 }
@@ -55,9 +51,6 @@ fit_ipw <- function(
 #'   \item{the variables in \code{censoring_formula}.}
 #' }
 #' @param censoring_formula A logistic censoring-model formula.
-#' @param treatment_probability A numeric value giving the known marginal
-#'   treatment probability.
-#'
 #' @return A one-row data frame containing:
 #' \itemize{
 #'   \item{\code{etahat_0}: estimated mean potential outcome under control;}
@@ -68,15 +61,14 @@ fit_ipw <- function(
 #'
 #' @keywords internal
 #' @noRd
-.fit_ipw_naive <- function(data, censoring_formula, treatment_probability = 0.5) {
-  ## censoring and treatment probabilities
+.fit_ipw_naive <- function(data, censoring_formula) {
+  ## censoring probabilities
   censoring_fit <- stats::glm(
     censoring_formula, family = stats::binomial(), data = data
   )
   design <- stats::model.matrix(censoring_formula, data)
   pi_c <- 1 - stats::predict(censoring_fit, data, type = "response")
-  pi_a <- ifelse(data$A == 1L, treatment_probability, 1 - treatment_probability)
-  weight <- pi_c * pi_a
+  weight <- pi_c
   observed0 <- data$C == 0L & data$A == 0L
   observed1 <- data$C == 0L & data$A == 1L
 
@@ -92,7 +84,7 @@ fit_ipw <- function(
     function(value) {
       beta <- value[-seq_len(4)]
       pi_c_value <- 1 - stats::plogis(as.vector(design %*% beta))
-      weight_value <- pi_c_value * pi_a
+      weight_value <- pi_c_value
       cbind(
         .logistic_score(data, beta, censoring_formula),
         ifelse(observed0, 1 / weight_value, 0) - value[3],

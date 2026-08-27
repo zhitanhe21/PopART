@@ -4,12 +4,7 @@
 \alias{fit_ipw}
 \title{Fit a parametric IPW estimator}
 \usage{
-fit_ipw(
-  data,
-  weight_formula,
-  version = c("naive", "proposed"),
-  treatment_probability = 0.5
-)
+fit_ipw(data, weight_formula, version = c("naive", "proposed"))
 }
 \arguments{
 \item{data}{A combined trial and auxiliary data frame containing:
@@ -28,9 +23,6 @@ sample-membership formula for the proposed estimator.}
 
 \item{version}{A character string equal to \code{"naive"} or
 \code{"proposed"}.}
-
-\item{treatment_probability}{A numeric value giving the known treatment
-probability.}
 }
 \value{
 A one-row data frame containing:

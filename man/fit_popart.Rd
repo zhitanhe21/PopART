@@ -15,7 +15,6 @@ fit_popart(
   covariates,
   auxiliary_weight = NULL,
   treatment_values = c(0, 1),
-  treatment_probability = 0.5,
   n_cv_folds = 5L,
   n_lambda_values = 50L,
   random_seed = 1L
@@ -60,9 +59,6 @@ weight one.}
 
 \item{treatment_values}{A vector containing the control and treated values,
 in that order.}
-
-\item{treatment_probability}{A numeric value giving the known marginal
-probability of assignment to the treated value.}
 
 \item{n_cv_folds}{An integer giving the number of HAL cross-validation folds.}
 

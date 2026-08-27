@@ -8,8 +8,7 @@ fit_aipw(
   data,
   outcome_formula,
   weight_formula,
-  version = c("naive", "proposed"),
-  treatment_probability = 0.5
+  version = c("naive", "proposed")
 )
 }
 \arguments{
@@ -30,9 +29,6 @@ sample-membership formula for the proposed estimator.}
 
 \item{version}{A character string equal to \code{"naive"} or
 \code{"proposed"}.}
-
-\item{treatment_probability}{A numeric value giving the known marginal
-treatment probability.}
 }
 \value{
 A one-row data frame containing:

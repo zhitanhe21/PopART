@@ -44,8 +44,6 @@
 #'   weight one.
 #' @param treatment_values A vector containing the control and treated values,
 #'   in that order.
-#' @param treatment_probability A numeric value giving the known marginal
-#'   probability of assignment to the treated value.
 #' @param n_cv_folds An integer giving the number of HAL cross-validation folds.
 #' @param n_lambda_values An integer giving the number of lasso penalties.
 #' @param random_seed An integer seed used to construct the HAL folds.
@@ -90,7 +88,6 @@ fit_popart <- function(
     covariates,
     auxiliary_weight = NULL,
     treatment_values = c(0, 1),
-    treatment_probability = 0.5,
     n_cv_folds = 5L,
     n_lambda_values = 50L,
     random_seed = 1L) {
@@ -108,9 +105,7 @@ fit_popart <- function(
   fits <- lapply(jobs, .fit_hal_job)
 
   # Compute all six estimators from the shared fits.
-  fit <- .finish_popart(
-    data, covariates, fits, treatment_probability, data$.cluster
-  )
+  fit <- .finish_popart(data, covariates, fits, data$.cluster)
   class(fit) <- "popart_fit"
   fit
 }
@@ -289,7 +284,6 @@ fit_popart <- function(
 #' @param data A combined analysis data frame.
 #' @param covariates A character vector naming the baseline covariates.
 #' @param fits A named list containing the four fitted HAL models.
-#' @param treatment_probability Known probability of treatment assignment.
 #' @param cluster Cluster identifier for each row of \code{data}.
 #'
 #' @return Estimate, variance, and covariance tables for all six estimators.
@@ -297,8 +291,7 @@ fit_popart <- function(
 #' @keywords internal
 #' @noRd
 .finish_popart <- function(
-    data, covariates, fits, treatment_probability = 0.5,
-    cluster = seq_len(nrow(data))) {
+    data, covariates, fits, cluster = seq_len(nrow(data))) {
   n <- nrow(data)
   responders <- data$S == 1L & data$R == 1L
   auxiliary <- data$S == 0L
@@ -322,9 +315,7 @@ fit_popart <- function(
   pi_c[responders] <- 1 - stats::predict(
     fits$censoring, new_data = data[responders, covariates, drop = FALSE]
   )
-  pi_naive <- ifelse(
-    data$A == 1L, treatment_probability, 1 - treatment_probability
-  ) * pi_c
+  pi_naive <- pi_c
 
   selection_probability <- rep(NA_real_, n)
   selection_probability[observed0] <- stats::predict(

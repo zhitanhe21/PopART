@@ -54,6 +54,21 @@ Causal interpretation requires cluster randomization, positivity, sufficient
 measured covariates for response and censoring, and a representative auxiliary
 sample or valid auxiliary sampling weights.
 
+### Auxiliary sampling weights
+
+`auxiliary_weight` is optional. It should name a weight column supplied with
+the auxiliary survey; the package does not estimate or invent these weights.
+
+| Auxiliary data | Setting |
+|---|---|
+| Simple random sample or complete target-population data | Leave `auxiliary_weight = NULL` |
+| Survey data with a sampling-weight column | Set `auxiliary_weight` to that column name |
+| Sampling mechanism unknown and no weights supplied | Leave it `NULL`; do not create arbitrary weights |
+
+When weights are supplied, they are used in the Proposed estimators to make the
+auxiliary sample represent its target population. The example is treated as an
+equally weighted auxiliary sample and therefore has no weight column.
+
 ## Installation
 
 Run these commands from the `PopART_full` folder:
@@ -166,9 +181,8 @@ Only one function is needed for a real-data analysis.
 | `censoring` | Outcome-censoring indicator column | required |
 | `cluster` | Cluster identifier column | required |
 | `covariates` | Shared cluster- and individual-level baseline covariates | required |
-| `auxiliary_weight` | Optional auxiliary sampling-weight column | `NULL` |
+| `auxiliary_weight` | Optional survey-weight column supplied with the auxiliary data | `NULL` |
 | `treatment_values` | Control and treatment values | `c(0, 1)` |
-| `treatment_probability` | Known probability of treatment assignment | `0.5` |
 | `n_cv_folds` | Number of HAL cross-validation folds | `5` |
 | `n_lambda_values` | Number of HAL lasso penalties | `50` |
 | `random_seed` | Seed used to create cluster-grouped HAL folds | `1` |
@@ -181,26 +195,28 @@ Only one function is needed for a real-data analysis.
 | `fit$variance` | Estimated variance of each causal parameter |
 | `fit$covariance` | Covariance matrix of `eta(0)` and `eta(1)` for each estimator/version |
 
-### Algorithms
+### Analysis pipeline
 
-| Component | Implementation |
-|---|---|
-| Outcome regression | One HAL model fitted among uncensored trial responders |
-| Censoring | One HAL model fitted among trial responders |
-| Sample selection | Separate control- and treatment-arm HAL models using trial and auxiliary covariates |
-| G-formula | Outcome predictions averaged over trial responders or the auxiliary target population |
-| IPW | Complete outcomes weighted by observation or sample-selection probabilities |
-| AIPW | Outcome regression combined with an inverse-probability correction |
-| Fit reuse | Four HAL nuisance fits are shared by all six estimator/version combinations |
-| Inference | Contributions are aggregated by cluster before covariance estimation |
+```text
+Algorithm 1  PopART estimation
 
-| Version | Interpretation |
-|---|---|
-| Naive | Uses observed trial responders and ignores differential nonresponse |
-| Proposed | Uses auxiliary covariates to represent the target population |
+Input:  trial data, auxiliary data, variable names, and HAL settings
+Output: Naive and Proposed G-formula, IPW, and AIPW estimates
 
-Each version reports `eta(0)`, `eta(1)`, `RD`, and `RR`, with standard errors
-and 95% confidence intervals.
+Fit the HAL outcome model among uncensored trial responders.
+Fit the HAL censoring model among trial responders.
+
+For each treatment arm a in {0, 1}:
+    Fit a HAL selection model using observed trial outcomes in arm a
+    and the auxiliary covariates.
+
+Reuse the four HAL fits to estimate eta(0), eta(1), RD, and RR.
+Use trial responders for Naive estimators.
+Use the auxiliary target population for Proposed estimators.
+Aggregate contributions by cluster to obtain standard errors and 95% CIs.
+
+Return the estimates, variances, and covariance matrices.
+```
 
 ## Simulation 1: parametric model specification
 

@@ -195,10 +195,6 @@ Only one function is needed for a real-data analysis.
 | `fit$variance` | Estimated variance of each causal parameter |
 | `fit$covariance` | Covariance matrix of `eta(0)` and `eta(1)` for each estimator/version |
 
-### Analysis pipeline
-
-![Algorithm 1: PopART estimation](readme/algorithm1.svg)
-
 ## Simulation 1: parametric model specification
 
 ### Purpose
@@ -248,10 +244,6 @@ them into one internal data frame.
 
 The auxiliary `R`, `C`, and `Y` values are placeholders and are not treated as
 observed outcomes. The estimators use `S` to distinguish the two samples.
-
-### Analysis pipeline
-
-![Algorithm 2: Simulation 1 Monte Carlo study](readme/algorithm2.svg)
 
 ### Current results
 
@@ -339,10 +331,6 @@ observed auxiliary variables. HAL is fitted with `X1`, `W1`, `W2`, and `W3`.
 | HAL jobs | Four shared fits per replicate |
 | Parallelization | One global worker pool; no nested HAL backend |
 | Memory control | Replicates are prepared and fitted in batches |
-
-### Analysis pipeline
-
-![Algorithm 3: Simulation 2 Monte Carlo study](readme/algorithm3.svg)
 
 ### Current results
 

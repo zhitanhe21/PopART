@@ -1,0 +1,35 @@
+Package: popart
+Type: Package
+Title: Population-Augmented Analysis of Randomized Trials
+Version: 0.1.0
+Authors@R: person(
+    given = "PopART",
+    family = "Team",
+    email = "popart.package@example.com",
+    role = c("aut", "cre")
+  )
+Author: PopART Team [aut, cre]
+Maintainer: PopART Team <popart.package@example.com>
+Description: Fits g-formula, inverse probability weighted, and augmented
+    inverse probability weighted estimators using randomized-trial and
+    auxiliary target-population samples. Highly adaptive lasso models estimate
+    the shared nuisance functions.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.1.0)
+Imports:
+    hal9001 (>= 0.4.6),
+    numDeriv,
+    stats
+Suggests:
+    dplyr,
+    ggh4x,
+    ggplot2,
+    legendry,
+    pkgload,
+    tidyr,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
